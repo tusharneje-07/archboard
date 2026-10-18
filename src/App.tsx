@@ -640,6 +640,17 @@ function Editor() {
       return index === -1 ? item : { ...item, zIndex: 2, position: { x: padding + (index % columns) * (cellWidth + gap), y: titleSpace + (Math.floor(index / columns) * (cellHeight + gap)) } };
     });
   };
+  useEffect(() => {
+    let next = nodes;
+    nodes.filter((item) => item.data.kind === "container").forEach((frame) => {
+      next = arrangeFrame(frame.id, next);
+    });
+    const changed = next.some((item, index) => {
+      const current = nodes[index];
+      return item.id !== current?.id || item.position.x !== current.position.x || item.position.y !== current.position.y || item.style?.width !== current.style?.width || item.style?.height !== current.style?.height;
+    });
+    if (changed) setNodes(next);
+  }, [nodes]);
   const moveNodeToFrame = (nodeId: string, frameId?: string) => {
     const node = nodes.find((item) => item.id === nodeId), frame = frameId ? nodes.find((item) => item.id === frameId && item.data.kind === "container") : undefined;
     if (!node || node.data.kind === "container" || node.parentId === frameId) return;
