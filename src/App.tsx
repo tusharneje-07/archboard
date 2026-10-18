@@ -97,6 +97,7 @@ type EdgeData = {
   gap: number;
   label?: string;
   labelDirection?: "horizontal" | "along" | "vertical";
+  labelHtml?: boolean;
 };
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramState = {
@@ -453,9 +454,7 @@ function SmartEdge({
                   ),
                 );
             }}
-          >
-            {data.label}
-          </div>
+          >{data.labelHtml ? <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(data.label) }} /> : data.label}</div>
         </EdgeLabelRenderer>
       )}
     </>
@@ -1477,12 +1476,18 @@ function ConnectorPanel({
   return (
     <div className="inspector-content">
       <Field label="Label">
-        <input
+        <textarea
           value={data.label ?? ""}
           placeholder="e.g. HTTPS / events"
+          rows={3}
           onChange={(e) => update({ label: e.target.value })}
         />
       </Field>
+      <div className="segmented">
+        <button className={!data.labelHtml ? "active" : ""} onClick={() => update({ labelHtml: false })}>Plain text</button>
+        <button className={data.labelHtml ? "active" : ""} onClick={() => update({ labelHtml: true })}>HTML source</button>
+      </div>
+      <p className="helper">Supports line breaks and sanitized HTML such as &lt;strong&gt;, &lt;em&gt;, lists, links and inline formatting.</p>
       <div className="section-label">Label direction</div>
       <div className="segmented">
         <button className={(data.labelDirection ?? "horizontal") === "horizontal" ? "active" : ""} onClick={() => update({ labelDirection: "horizontal" })}>Horizontal</button>
