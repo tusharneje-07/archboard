@@ -1604,9 +1604,9 @@ function LayerView({
       className={node.id === selectedId ? "active" : ""}
       style={{ paddingLeft: 9 + depth * 17 }}
       draggable
-      onDragStart={(event) => event.dataTransfer.setData("application/archboard-layer", node.id)}
-      onDragOver={(event) => node.data.kind === "container" && event.preventDefault()}
-      onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
+      onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/archboard-layer", node.id); event.dataTransfer.setData("text/plain", node.id); }}
+      onDragOver={(event) => { if (node.data.kind === "container") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+      onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const nodeId = event.dataTransfer.getData("application/archboard-layer") || event.dataTransfer.getData("text/plain"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
       onClick={() => select(node.id)}
     >
       <span className={`layer-tree-guide ${depth ? "visible" : ""}`} />
