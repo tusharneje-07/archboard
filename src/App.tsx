@@ -96,6 +96,7 @@ type EdgeData = {
   dash: number;
   gap: number;
   label?: string;
+  labelDirection?: "horizontal" | "along" | "vertical";
 };
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramState = {
@@ -403,6 +404,7 @@ function SmartEdge({
   const labelY = data?.route === "orthogonal" ? (sourceY + targetY) / 2 - 8 : data?.route === "free" ? (sourceY + 2 * controlOne.y + 2 * controlTwo.y + targetY) / 6 - 8 : sourceY + (targetY - sourceY) / 2 - 8;
   const endAngle = data?.route === "orthogonal" ? (targetX >= midX ? 0 : 180) : data?.route === "free" ? Math.atan2(targetY - controlTwo.y, targetX - controlTwo.x) * 180 / Math.PI : Math.atan2(targetY - sourceY, targetX - sourceX) * 180 / Math.PI;
   const startAngle = data?.route === "orthogonal" ? (sourceX <= midX ? 180 : 0) : data?.route === "free" ? Math.atan2(sourceY - controlOne.y, sourceX - controlOne.x) * 180 / Math.PI : endAngle + 180;
+  const labelAngle = data?.labelDirection === "vertical" ? 90 : data?.labelDirection === "along" ? Math.atan2(targetY - sourceY, targetX - sourceX) * 180 / Math.PI : 0;
   const arrow = (x: number, y: number, angle: number) => (
     <polygon
       points="0,0 -12,-6 -12,6"
@@ -439,7 +441,7 @@ function SmartEdge({
           <div
             className="edge-label nodrag nopan"
             style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px) rotate(${labelAngle}deg)`,
             }}
             onDoubleClick={() => {
               const label = prompt("Connector label", data.label);
@@ -1481,6 +1483,12 @@ function ConnectorPanel({
           onChange={(e) => update({ label: e.target.value })}
         />
       </Field>
+      <div className="section-label">Label direction</div>
+      <div className="segmented">
+        <button className={(data.labelDirection ?? "horizontal") === "horizontal" ? "active" : ""} onClick={() => update({ labelDirection: "horizontal" })}>Horizontal</button>
+        <button className={data.labelDirection === "along" ? "active" : ""} onClick={() => update({ labelDirection: "along" })}>Along line</button>
+        <button className={data.labelDirection === "vertical" ? "active" : ""} onClick={() => update({ labelDirection: "vertical" })}>Vertical</button>
+      </div>
       <div className="section-label">Arrowhead</div>
       <div className="segmented">
         <button
