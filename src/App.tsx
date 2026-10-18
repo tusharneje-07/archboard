@@ -1141,9 +1141,9 @@ function Editor() {
               defaultEdgeOptions={{ type: "smart" }}
             >
               <Background
-                gap={16}
-                size={1}
-                color={grid ? "#d7e0e5" : "transparent"}
+                gap={20}
+                size={2}
+                color={grid ? "#b8cbd0" : "transparent"}
               />
               <MiniMap
                 nodeColor={(n) => (n.data as NodeData).fill}
