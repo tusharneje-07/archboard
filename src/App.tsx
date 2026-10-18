@@ -679,6 +679,24 @@ function Editor() {
     });
     if (changed) setNodes(next);
   }, [nodes]);
+  useEffect(() => {
+    let next = nodes, changed = false, framesToArrange = new Set<string>();
+    nodes.filter((item) => !item.parentId && item.data.kind !== "container").forEach((item) => {
+      const position = absolutePosition(item), width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), frame = nodes.find((candidate) => {
+        if (candidate.data.kind !== "container") return false;
+        const framePosition = absolutePosition(candidate), frameWidth = Number(candidate.style?.width ?? candidate.data.width ?? 330), frameHeight = Number(candidate.style?.height ?? candidate.data.height ?? 220);
+        return position.x >= framePosition.x && position.y >= framePosition.y && position.x + width <= framePosition.x + frameWidth && position.y + height <= framePosition.y + frameHeight;
+      });
+      if (frame) {
+        const framePosition = absolutePosition(frame);
+        next = next.map((candidate) => candidate.id === item.id ? { ...candidate, parentId: frame.id, extent: "parent" as const, position: { x: position.x - framePosition.x, y: position.y - framePosition.y } } : candidate);
+        framesToArrange.add(frame.id);
+        changed = true;
+      }
+    });
+    framesToArrange.forEach((frameId) => { next = arrangeFrame(frameId, next); });
+    if (changed) setNodes(next);
+  }, [nodes]);
   const moveNodeToFrame = (nodeId: string, frameId?: string) => {
     const node = nodes.find((item) => item.id === nodeId), frame = frameId ? nodes.find((item) => item.id === frameId && item.data.kind === "container") : undefined;
     if (!node || node.data.kind === "container" || node.parentId === frameId) return;
