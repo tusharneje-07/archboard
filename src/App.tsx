@@ -85,6 +85,7 @@ type NodeData = {
   paddingY?: number;
   width?: number;
   height?: number;
+  clipContent?: boolean;
 };
 type EdgeData = {
   route: "straight" | "orthogonal" | "free";
@@ -303,6 +304,7 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
               ? "flex-end"
               : "center",
         padding: `${data.padding}px ${data.paddingX ?? data.padding}px`,
+        overflow: data.kind === "container" && data.clipContent ? "hidden" : "visible",
       }}
     >
       {selected && (
@@ -499,6 +501,7 @@ function Editor() {
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
   const layerRoot = useRef<Root | null>(null);
+  const normalizedFrames = useRef(false);
   useEffect(() => {
     const host = document.createElement("div");
     host.className = "layers-float-host";
@@ -645,6 +648,8 @@ function Editor() {
     });
   };
   useEffect(() => {
+    if (normalizedFrames.current) return;
+    normalizedFrames.current = true;
     let next = nodes;
     nodes.filter((item) => item.data.kind === "container").forEach((frame) => {
       next = arrangeFrame(frame.id, next);
@@ -666,6 +671,11 @@ function Editor() {
       if (node.parentId) next = arrangeFrame(node.parentId, next);
       return next;
     });
+  };
+  const arrangeSelectedFrame = () => {
+    if (!selected || selected.data.kind !== "container") return;
+    snapshot();
+    setNodes((items) => arrangeFrame(selected.id, items));
   };
   const addShape = useCallback(
     (kind: ShapeKind, pos = { x: 240, y: 160 }) => {
@@ -879,7 +889,7 @@ function Editor() {
     const absolute = { x: node.position.x + parentPosition.x, y: node.position.y + parentPosition.y };
     const width = Number(node.style?.width ?? node.data.width ?? 170), height = Number(node.style?.height ?? node.data.height ?? 76);
     const frame = frameAt(absolute, width, height, node.id), framePosition = frame ? absolutePosition(frame) : undefined;
-    if (frame && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
+    if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
   const exportImage = async (format: "png" | "svg") => {
@@ -1138,7 +1148,7 @@ function Editor() {
                 <TextPanel data={selected.data} update={updateSelected} />
               )}{" "}
               {selected && !selectedEdge && tab === "appearance" && (
-                <AppearancePanel data={selected.data} update={updateSelected} />
+                <AppearancePanel data={selected.data} update={updateSelected} arrange={arrangeSelectedFrame} />
               )}{" "}
               {selected && !selectedEdge && tab === "themes" && (
                 <ThemePanel
@@ -1301,9 +1311,11 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
 function AppearancePanel({
   data,
   update,
+  arrange,
 }: {
   data: NodeData;
   update: NodeUpdate;
+  arrange: () => void;
 }) {
   return (
     <div className="inspector-content">
@@ -1397,6 +1409,12 @@ function AppearancePanel({
         />
         <b>{data.padding}px</b>
       </Field>
+      {data.kind === "container" && (
+        <>
+          <button className="arrange-frame" onClick={arrange}><Grid3X3 size={14} /> Arrange children</button>
+          <label className="frame-toggle"><input type="checkbox" checked={data.clipContent ?? false} onChange={(e) => update({ clipContent: e.target.checked })} /> Clip content to frame</label>
+        </>
+      )}
       <div className="section-label">Size & layout</div>
       <div className="align-row">
         <button onClick={() => update({ vertical: "top" })}>
