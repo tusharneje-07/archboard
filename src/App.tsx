@@ -651,14 +651,25 @@ function Editor() {
     if (normalizedFrames.current) return;
     normalizedFrames.current = true;
     let next = nodes;
-    nodes.filter((item) => !item.parentId && item.data.kind !== "container").forEach((item) => {
-      const width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), frame = frameAt(absolutePosition(item), width, height, item.id);
+    next = next.map((item) => {
+      if (!item.parentId) return item;
+      const parent = nodes.find((candidate) => candidate.id === item.parentId);
+      if (!parent) return { ...item, parentId: undefined, extent: undefined };
+      const itemPosition = absolutePosition(item), parentPosition = absolutePosition(parent), width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), parentWidth = Number(parent.style?.width ?? parent.data.width ?? 330), parentHeight = Number(parent.style?.height ?? parent.data.height ?? 220), fullyInside = itemPosition.x >= parentPosition.x && itemPosition.y >= parentPosition.y && itemPosition.x + width <= parentPosition.x + parentWidth && itemPosition.y + height <= parentPosition.y + parentHeight;
+      return fullyInside ? item : { ...item, parentId: undefined, extent: undefined, position: itemPosition };
+    });
+    next.filter((item) => !item.parentId && item.data.kind !== "container").forEach((item) => {
+      const width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), frame = nodes.find((candidate) => {
+        if (candidate.data.kind !== "container") return false;
+        const itemPosition = absolutePosition(item), framePosition = absolutePosition(candidate), frameWidth = Number(candidate.style?.width ?? candidate.data.width ?? 330), frameHeight = Number(candidate.style?.height ?? candidate.data.height ?? 220);
+        return itemPosition.x >= framePosition.x && itemPosition.y >= framePosition.y && itemPosition.x + width <= framePosition.x + frameWidth && itemPosition.y + height <= framePosition.y + frameHeight;
+      });
       if (frame) {
         const framePosition = absolutePosition(frame);
         next = next.map((candidate) => candidate.id === item.id ? { ...candidate, parentId: frame.id, extent: "parent" as const, position: { x: item.position.x - framePosition.x, y: item.position.y - framePosition.y } } : candidate);
       }
     });
-    nodes.filter((item) => item.data.kind === "container").forEach((frame) => {
+    next.filter((item) => item.data.kind === "container").forEach((frame) => {
       next = arrangeFrame(frame.id, next);
     });
     const changed = next.some((item, index) => {
