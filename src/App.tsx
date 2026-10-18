@@ -383,6 +383,8 @@ function SmartEdge({
   sourceY,
   targetX,
   targetY,
+  sourcePosition,
+  targetPosition,
   data,
   selected,
 }: EdgeProps<Edge<EdgeData>>) {
@@ -390,8 +392,10 @@ function SmartEdge({
     nodes = useDiagram((s) => s.nodes),
     edges = useDiagram((s) => s.edges);
   const midX = sourceX + (targetX - sourceX) / 2;
-  const controlOne = { x: sourceX + (targetX - sourceX) * 0.35, y: sourceY + (targetY - sourceY) * 0.08 };
-  const controlTwo = { x: targetX - (targetX - sourceX) * 0.35, y: targetY - (targetY - sourceY) * 0.08 };
+  const outward = (position?: Position) => position === Position.Top ? { x: 0, y: -1 } : position === Position.Bottom ? { x: 0, y: 1 } : position === Position.Left ? { x: -1, y: 0 } : { x: 1, y: 0 };
+  const sourceOutward = outward(sourcePosition), targetOutward = outward(targetPosition), curveDistance = Math.max(56, Math.min(150, Math.hypot(targetX - sourceX, targetY - sourceY) * 0.34));
+  const controlOne = { x: sourceX + sourceOutward.x * curveDistance, y: sourceY + sourceOutward.y * curveDistance };
+  const controlTwo = { x: targetX + targetOutward.x * curveDistance, y: targetY + targetOutward.y * curveDistance };
   const path = data?.route === "orthogonal" ? `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}` : data?.route === "free" ? `M ${sourceX} ${sourceY} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${targetX} ${targetY}` : `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
   const labelX = data?.route === "orthogonal" ? midX : data?.route === "free" ? (sourceX + 2 * controlOne.x + 2 * controlTwo.x + targetX) / 6 : sourceX + (targetX - sourceX) / 2;
   const labelY = data?.route === "orthogonal" ? (sourceY + targetY) / 2 - 8 : data?.route === "free" ? (sourceY + 2 * controlOne.y + 2 * controlTwo.y + targetY) / 6 - 8 : sourceY + (targetY - sourceY) / 2 - 8;
