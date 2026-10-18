@@ -643,9 +643,9 @@ function Editor() {
   const moveNodeToFrame = (nodeId: string, frameId?: string) => {
     const node = nodes.find((item) => item.id === nodeId), frame = frameId ? nodes.find((item) => item.id === frameId && item.data.kind === "container") : undefined;
     if (!node || node.data.kind === "container" || node.parentId === frameId) return;
-    const absolute = absolutePosition(node);
+    const absolute = absolutePosition(node), framePosition = frame ? absolutePosition(frame) : undefined;
     snapshot();
-    setNodes((items) => items.map((item) => item.id === nodeId ? { ...item, parentId: frame?.id, extent: frame ? "parent" as const : undefined, position: frame ? { x: absolute.x - frame.position.x, y: absolute.y - frame.position.y } : absolute } : item));
+    setNodes((items) => items.map((item) => item.id === nodeId ? { ...item, parentId: frame?.id, extent: frame ? "parent" as const : undefined, position: framePosition ? { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } : absolute } : item));
   };
   const addShape = useCallback(
     (kind: ShapeKind, pos = { x: 240, y: 160 }) => {
