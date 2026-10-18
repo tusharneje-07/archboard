@@ -426,11 +426,13 @@ h2 {
 .react-flow__edge path {
   cursor: pointer;
 }
+.react-flow__edgelabel-renderer { z-index: 1000 !important; pointer-events: none; }
 .edge-selected path {
   stroke-width: 3;
 }
 .edge-label {
   position: absolute;
+  z-index: 1001;
   display: inline-block;
   width: max-content;
   max-width: 180px;
