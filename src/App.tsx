@@ -651,6 +651,13 @@ function Editor() {
     if (normalizedFrames.current) return;
     normalizedFrames.current = true;
     let next = nodes;
+    nodes.filter((item) => !item.parentId && item.data.kind !== "container").forEach((item) => {
+      const width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), frame = frameAt(absolutePosition(item), width, height, item.id);
+      if (frame) {
+        const framePosition = absolutePosition(frame);
+        next = next.map((candidate) => candidate.id === item.id ? { ...candidate, parentId: frame.id, extent: "parent" as const, position: { x: item.position.x - framePosition.x, y: item.position.y - framePosition.y } } : candidate);
+      }
+    });
     nodes.filter((item) => item.data.kind === "container").forEach((frame) => {
       next = arrangeFrame(frame.id, next);
     });
@@ -1566,6 +1573,25 @@ function LayerView({
   select: (id: string) => void;
   moveToFrame: (nodeId: string, frameId?: string) => void;
 }) {
+  const roots = nodes.filter((node) => !node.parentId).slice().reverse();
+  const renderLayer = (node: Node<NodeData>, depth: number): React.ReactNode[] => [
+    <button
+      key={node.id}
+      className={node.id === selectedId ? "active" : ""}
+      style={{ paddingLeft: 9 + depth * 17 }}
+      draggable
+      onDragStart={(event) => event.dataTransfer.setData("application/archboard-layer", node.id)}
+      onDragOver={(event) => node.data.kind === "container" && event.preventDefault()}
+      onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
+      onClick={() => select(node.id)}
+    >
+      <span className={`layer-tree-guide ${depth ? "visible" : ""}`} />
+      <span className={`layer-dot ${node.data.kind}`} />
+      <span>{node.data.label.replace(/<[^>]+>/g, "").slice(0, 22) || "Untitled"}</span>
+      <small>{node.data.kind === "container" ? "FRAME" : node.data.kind.toUpperCase()}</small>
+    </button>,
+    ...nodes.filter((child) => child.parentId === node.id).slice().reverse().flatMap((child) => renderLayer(child, depth + 1)),
+  ];
   return (
     <div className="layers-float">
       <div className="layers-float-head">
@@ -1577,32 +1603,7 @@ function LayerView({
       </div>
       <div className="layers-canvas-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId) moveToFrame(nodeId); }}>Canvas</div>
       <div className="layers-float-list">
-        {nodes
-          .slice()
-          .reverse()
-          .map((node) => (
-            <button
-              key={node.id}
-              className={node.id === selectedId ? "active" : ""}
-              style={{ paddingLeft: node.parentId ? 23 : 9 }}
-              draggable
-              onDragStart={(event) => event.dataTransfer.setData("application/archboard-layer", node.id)}
-              onDragOver={(event) => node.data.kind === "container" && event.preventDefault()}
-              onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
-              onClick={() => select(node.id)}
-            >
-              <span className={`layer-dot ${node.data.kind}`} />
-              <span>
-                {node.data.label.replace(/<[^>]+>/g, "").slice(0, 22) ||
-                  "Untitled"}
-              </span>
-              <small>
-                {node.data.kind === "container"
-                  ? "FRAME"
-                  : node.data.kind.toUpperCase()}
-              </small>
-            </button>
-          ))}
+        {roots.flatMap((node) => renderLayer(node, 0))}
       </div>
     </div>
   );

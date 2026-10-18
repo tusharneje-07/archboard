@@ -681,6 +681,7 @@ h2 {
   background: #edf7f8;
   color: #17677a;
 }
+.layer-tree-guide { width: 10px; height: 18px; margin-right: -2px; border-left: 1px solid transparent; border-bottom: 1px solid transparent; }.layer-tree-guide.visible { border-color: #b9cdd1; }
 .layers-float-list small {
   margin-left: auto;
   color: #a2afb2;
