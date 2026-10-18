@@ -389,26 +389,14 @@ function SmartEdge({
   const update = useDiagram((s) => s.setDiagram),
     nodes = useDiagram((s) => s.nodes),
     edges = useDiagram((s) => s.edges);
-  const dx = Math.abs(targetX - sourceX),
-    midX = sourceX + (targetX - sourceX) / 2;
-  const path =
-    data?.route === "orthogonal"
-      ? `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}`
-      : `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
-  const labelX =
-      data?.route === "orthogonal" ? midX : sourceX + (targetX - sourceX) / 2,
-    labelY =
-      data?.route === "orthogonal"
-        ? (sourceY + targetY) / 2 - 8
-        : sourceY + (targetY - sourceY) / 2 - 8;
-  const endAngle =
-    data?.route === "orthogonal"
-      ? targetX >= midX
-        ? 0
-        : 180
-      : (Math.atan2(targetY - sourceY, targetX - sourceX) * 180) / Math.PI;
-  const startAngle =
-    data?.route === "orthogonal" ? (sourceX <= midX ? 180 : 0) : endAngle + 180;
+  const midX = sourceX + (targetX - sourceX) / 2;
+  const controlOne = { x: sourceX + (targetX - sourceX) * 0.35, y: sourceY + (targetY - sourceY) * 0.08 };
+  const controlTwo = { x: targetX - (targetX - sourceX) * 0.35, y: targetY - (targetY - sourceY) * 0.08 };
+  const path = data?.route === "orthogonal" ? `M ${sourceX} ${sourceY} L ${midX} ${sourceY} L ${midX} ${targetY} L ${targetX} ${targetY}` : data?.route === "free" ? `M ${sourceX} ${sourceY} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${targetX} ${targetY}` : `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`;
+  const labelX = data?.route === "orthogonal" ? midX : data?.route === "free" ? (sourceX + 2 * controlOne.x + 2 * controlTwo.x + targetX) / 6 : sourceX + (targetX - sourceX) / 2;
+  const labelY = data?.route === "orthogonal" ? (sourceY + targetY) / 2 - 8 : data?.route === "free" ? (sourceY + 2 * controlOne.y + 2 * controlTwo.y + targetY) / 6 - 8 : sourceY + (targetY - sourceY) / 2 - 8;
+  const endAngle = data?.route === "orthogonal" ? (targetX >= midX ? 0 : 180) : data?.route === "free" ? Math.atan2(targetY - controlTwo.y, targetX - controlTwo.x) * 180 / Math.PI : Math.atan2(targetY - sourceY, targetX - sourceX) * 180 / Math.PI;
+  const startAngle = data?.route === "orthogonal" ? (sourceX <= midX ? 180 : 0) : data?.route === "free" ? Math.atan2(sourceY - controlOne.y, sourceX - controlOne.x) * 180 / Math.PI : endAngle + 180;
   const arrow = (x: number, y: number, angle: number) => (
     <polygon
       points="0,0 -12,-6 -12,6"
