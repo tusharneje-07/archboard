@@ -923,9 +923,11 @@ function Editor() {
     if (node.data.kind === "container") return;
     const currentParent = node.parentId ? nodes.find((item) => item.id === node.parentId) : undefined;
     const parentPosition = currentParent ? absolutePosition(currentParent) : { x: 0, y: 0 };
-    const absolute = { x: node.position.x + parentPosition.x, y: node.position.y + parentPosition.y };
+    const renderedPosition = (node as Node<NodeData> & { positionAbsolute?: { x: number; y: number } }).positionAbsolute ?? { x: node.position.x + parentPosition.x, y: node.position.y + parentPosition.y };
+    const absolute = renderedPosition;
     const width = Number(node.style?.width ?? node.data.width ?? 170), height = Number(node.style?.height ?? node.data.height ?? 76);
-    const frame = frameAt(absolute, width, height, node.id), framePosition = frame ? absolutePosition(frame) : undefined;
+    const intersectingFrame = reactFlow.getIntersectingNodes(node, true).find((item) => item.data.kind === "container" && item.id !== node.id);
+    const frame = intersectingFrame ? nodes.find((item) => item.id === intersectingFrame.id) : frameAt(absolute, width, height, node.id), framePosition = frame ? ((frame as Node<NodeData> & { positionAbsolute?: { x: number; y: number } }).positionAbsolute ?? absolutePosition(frame)) : undefined;
     if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
