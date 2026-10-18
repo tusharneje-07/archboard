@@ -628,13 +628,22 @@ function Editor() {
   }, [selectedId, nodes, edges, redo, setEdges, setNodes, snapshot, undo]);
   const selected = nodes.find((n) => n.id === selectedId),
     selectedEdge = edges.find((e) => e.id === selectedId);
+  const absolutePosition = (node: Node<NodeData>, allNodes = nodes): { x: number; y: number } => {
+    const parent = node.parentId ? allNodes.find((item) => item.id === node.parentId) : undefined;
+    return parent ? { x: node.position.x + absolutePosition(parent, allNodes).x, y: node.position.y + absolutePosition(parent, allNodes).y } : node.position;
+  };
   const frameAt = (position: { x: number; y: number }, width: number, height: number, ignoredId?: string) =>
-    nodes.find((frame) => frame.data.kind === "container" && frame.id !== ignoredId && position.x + width / 2 > frame.position.x && position.x + width / 2 < frame.position.x + Number(frame.style?.width ?? frame.data.width ?? 330) && position.y + height / 2 > frame.position.y && position.y + height / 2 < frame.position.y + Number(frame.style?.height ?? frame.data.height ?? 220));
+    nodes.find((frame) => {
+      if (frame.data.kind !== "container" || frame.id === ignoredId) return false;
+      const framePosition = absolutePosition(frame);
+      const frameWidth = Number(frame.style?.width ?? frame.data.width ?? 330), frameHeight = Number(frame.style?.height ?? frame.data.height ?? 220);
+      const overlaps = position.x < framePosition.x + frameWidth && position.x + width > framePosition.x && position.y < framePosition.y + frameHeight && position.y + height > framePosition.y;
+      return overlaps;
+    });
   const moveNodeToFrame = (nodeId: string, frameId?: string) => {
     const node = nodes.find((item) => item.id === nodeId), frame = frameId ? nodes.find((item) => item.id === frameId && item.data.kind === "container") : undefined;
     if (!node || node.data.kind === "container" || node.parentId === frameId) return;
-    const oldParent = node.parentId ? nodes.find((item) => item.id === node.parentId) : undefined;
-    const absolute = { x: node.position.x + (oldParent?.position.x ?? 0), y: node.position.y + (oldParent?.position.y ?? 0) };
+    const absolute = absolutePosition(node);
     snapshot();
     setNodes((items) => items.map((item) => item.id === nodeId ? { ...item, parentId: frame?.id, extent: frame ? "parent" as const : undefined, position: frame ? { x: absolute.x - frame.position.x, y: absolute.y - frame.position.y } : absolute } : item));
   };
@@ -649,7 +658,8 @@ function Editor() {
       const width = kind === "text" ? 180 : kind === "container" ? 330 : 170,
         height = kind === "text" ? 48 : kind === "container" ? 220 : 76;
       const selectedFrame = selected?.data.kind === "container" ? selected : undefined;
-      const absolute = selectedFrame ? { x: selectedFrame.position.x + 24, y: selectedFrame.position.y + 56 } : pos;
+      const selectedFramePosition = selectedFrame ? absolutePosition(selectedFrame) : undefined;
+      const absolute = selectedFramePosition ? { x: selectedFramePosition.x + 24, y: selectedFramePosition.y + 56 } : pos;
       const node: Node<NodeData> = {
         id,
         type: "shape",
@@ -679,6 +689,7 @@ function Editor() {
       const width = kind === "text" ? 180 : kind === "container" ? 330 : 170,
         height = kind === "text" ? 48 : kind === "container" ? 220 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
+      const framePosition = frame ? absolutePosition(frame) : undefined;
       snapshot();
       const id = `${kind}-${Date.now()}`;
       setNodes((ns) => [
@@ -688,7 +699,7 @@ function Editor() {
           type: "shape",
           parentId: frame?.id,
           extent: frame ? "parent" : undefined,
-          position: frame ? { x: position.x - frame.position.x, y: position.y - frame.position.y } : position,
+          position: framePosition ? { x: position.x - framePosition.x, y: position.y - framePosition.y } : position,
           zIndex: kind === "container" ? -1 : 1,
           style: { width, height },
           data: { ...baseData(kind), width, height },
@@ -842,11 +853,10 @@ function Editor() {
   };
   const handleNodeDragStop = (_event: MouseEvent | TouchEvent, node: Node<NodeData>) => {
     if (node.data.kind === "container") return;
-    const parent = node.parentId ? nodes.find((item) => item.id === node.parentId) : undefined;
-    const absolute = { x: node.position.x + (parent?.position.x ?? 0), y: node.position.y + (parent?.position.y ?? 0) };
+    const absolute = absolutePosition(node);
     const width = Number(node.style?.width ?? node.data.width ?? 170), height = Number(node.style?.height ?? node.data.height ?? 76);
-    const frame = nodes.find((item) => item.data.kind === "container" && item.id !== node.id && absolute.x + width / 2 > item.position.x && absolute.x + width / 2 < item.position.x + Number(item.style?.width ?? item.data.width ?? 330) && absolute.y + height / 2 > item.position.y && absolute.y + height / 2 < item.position.y + Number(item.style?.height ?? item.data.height ?? 220));
-    if (frame && frame.id !== node.parentId) { snapshot(); setNodes((items) => items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - frame.position.x, y: absolute.y - frame.position.y } } : item)); }
+    const frame = frameAt(absolute, width, height, node.id), framePosition = frame ? absolutePosition(frame) : undefined;
+    if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item)); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item)); }
   };
   const exportImage = async (format: "png" | "svg") => {
