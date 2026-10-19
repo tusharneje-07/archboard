@@ -943,14 +943,30 @@ function Editor() {
   };
   const exportImage = async (format: "png" | "svg" | "jpg" = exportFormat) => {
     if (!canvas.current) return;
+    const padding = 48, positions = nodes.map((node) => ({ node, position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) }));
+    if (!positions.length) return;
+    const minX = Math.min(...positions.map((item) => item.position.x)), minY = Math.min(...positions.map((item) => item.position.y)), maxX = Math.max(...positions.map((item) => item.position.x + item.width)), maxY = Math.max(...positions.map((item) => item.position.y + item.height)), exportWidth = Math.max(1, maxX - minX + padding * 2), exportHeight = Math.max(1, maxY - minY + padding * 2);
+    const originalViewport = reactFlow.getViewport(), originalWidth = canvas.current.style.width, originalHeight = canvas.current.style.height;
+    canvas.current.classList.add("exporting");
+    canvas.current.style.width = `${exportWidth}px`;
+    canvas.current.style.height = `${exportHeight}px`;
+    reactFlow.setViewport({ x: padding - minX, y: padding - minY, zoom: 1 });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const backgroundColor = exportTransparent ? undefined : "#f8fafc";
-    const options = { backgroundColor, quality: exportQuality / 100, pixelRatio: exportDpi / 96 };
-    const data = format === "png" ? await toPng(canvas.current, options) : format === "jpg" ? await toJpeg(canvas.current, options) : await toSvg(canvas.current, { backgroundColor });
-    const a = document.createElement("a");
-    a.href = data;
-    a.download = `archboard.${format === "jpg" ? "jpg" : format}`;
-    a.click();
-    setExportOpen(false);
+    try {
+      const options = { backgroundColor, quality: exportQuality / 100, pixelRatio: exportDpi / 96, width: exportWidth, height: exportHeight, style: { width: `${exportWidth}px`, height: `${exportHeight}px` } };
+      const data = format === "png" ? await toPng(canvas.current, options) : format === "jpg" ? await toJpeg(canvas.current, options) : await toSvg(canvas.current, { backgroundColor, width: exportWidth, height: exportHeight, style: { width: `${exportWidth}px`, height: `${exportHeight}px` } });
+      const a = document.createElement("a");
+      a.href = data;
+      a.download = `archboard.${format === "jpg" ? "jpg" : format}`;
+      a.click();
+      setExportOpen(false);
+    } finally {
+      canvas.current.classList.remove("exporting");
+      canvas.current.style.width = originalWidth;
+      canvas.current.style.height = originalHeight;
+      reactFlow.setViewport(originalViewport);
+    }
   };
   const downloadSkill = async () => { const response = await fetch("/SKILL.md"); const content = response.ok ? await response.text() : "Use Archboard's nodes and edges JSON format to draft an importable architecture diagram."; const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([content], { type: "text/markdown" })); a.download = "SKILL.md"; a.click(); URL.revokeObjectURL(a.href); };
   const exportJson = () => {

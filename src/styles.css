@@ -352,6 +352,10 @@ h2 {
   flex: 1;
   min-height: 0;
 }
+.canvas-stage.exporting .react-flow__background,
+.canvas-stage.exporting .react-flow__controls,
+.canvas-stage.exporting .react-flow__minimap,
+.canvas-stage.exporting .react-flow__panel { display: none !important; }
 .react-flow__pane { cursor: default !important; }
 .react-flow__pane.dragging { cursor: grabbing !important; }
 .react-flow__node { cursor: default; }
