@@ -100,15 +100,16 @@ type EdgeData = {
   labelHtml?: boolean;
 };
 type Theme = { name: string; fill: string; border: string; text: string };
+type DiagramSnapshot = { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
 type DiagramState = {
   nodes: Node<NodeData>[];
   edges: Edge<EdgeData>[];
-  past: { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] }[];
-  future: { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] }[];
+  past: DiagramSnapshot[];
+  future: DiagramSnapshot[];
   setDiagram: (nodes: Node<NodeData>[], edges: Edge<EdgeData>[]) => void;
   snapshot: () => void;
-  undo: () => void;
-  redo: () => void;
+  undo: () => DiagramSnapshot | null;
+  redo: () => DiagramSnapshot | null;
 };
 
 const themes: Theme[] = [
@@ -249,24 +250,26 @@ const useDiagram = create<DiagramState>((set, get) => ({
   undo: () => {
     const s = get();
     const previous = s.past.at(-1);
-    if (!previous) return;
+    if (!previous) return null;
     set({
       nodes: previous.nodes,
       edges: previous.edges,
       past: s.past.slice(0, -1),
       future: [{ nodes: s.nodes, edges: s.edges }, ...s.future],
     });
+    return previous;
   },
   redo: () => {
     const s = get();
     const next = s.future[0];
-    if (!next) return;
+    if (!next) return null;
     set({
       nodes: next.nodes,
       edges: next.edges,
       future: s.future.slice(1),
       past: [...s.past, { nodes: s.nodes, edges: s.edges }],
     });
+    return next;
   },
 }));
 
@@ -503,6 +506,8 @@ function Editor() {
     dropRef = useRef(false);
   const layerRoot = useRef<Root | null>(null);
   const normalizedFrames = useRef(false);
+  const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
+  const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
   useEffect(() => {
     const host = document.createElement("div");
     host.className = "layers-float-host";
@@ -605,9 +610,9 @@ function Editor() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
         e.preventDefault();
-        e.shiftKey ? redo() : undo();
+        e.shiftKey ? redoDiagram() : undoDiagram();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "y") redo();
+      if ((e.metaKey || e.ctrlKey) && e.key === "y") redoDiagram();
       if (e.key === "Delete" || e.key === "Backspace") {
         const target = e.target as HTMLElement;
         if (
@@ -621,7 +626,7 @@ function Editor() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, nodes, edges, redo, setEdges, setNodes, snapshot, undo]);
+  }, [selectedId, nodes, edges, redoDiagram, undoDiagram, snapshot]);
   const selected = nodes.find((n) => n.id === selectedId),
     selectedEdge = edges.find((e) => e.id === selectedId);
   const absolutePosition = (node: Node<NodeData>, allNodes = nodes): { x: number; y: number } => {
@@ -1096,10 +1101,10 @@ function Editor() {
               </button>
             </div>
             <div className="toolbar-group">
-              <button onClick={undo} disabled={!state.past.length}>
+              <button onClick={undoDiagram} disabled={!state.past.length}>
                 <Undo2 size={15} />
               </button>
-              <button onClick={redo} disabled={!state.future.length}>
+              <button onClick={redoDiagram} disabled={!state.future.length}>
                 <Redo2 size={15} />
               </button>
             </div>
