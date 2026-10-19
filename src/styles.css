@@ -456,6 +456,7 @@ h2 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.edge-arrow-overlay { position: absolute; z-index: 1002; width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 16px solid; pointer-events: none; }
 .inspector-tabs {
   display: flex;
   gap: 15px;

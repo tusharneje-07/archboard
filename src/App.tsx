@@ -457,8 +457,6 @@ function SmartEdge({
             : undefined,
         }}
       />
-      {data?.arrow !== "none" && arrow(endTip.x, endTip.y, endAngle)}
-      {data?.arrow === "double" && arrow(startTip.x, startTip.y, startAngle)}
       <path
         d={path}
         fill="none"
@@ -466,6 +464,8 @@ function SmartEdge({
         strokeWidth={16}
         className="edge-hit-area"
       />
+      {data?.arrow !== "none" && <EdgeLabelRenderer><div className="edge-arrow-overlay" style={{ left: lineTarget.x, top: lineTarget.y, borderLeftColor: data?.stroke, transform: `translate(-100%, -50%) rotate(${endAngle}deg)` }} /></EdgeLabelRenderer>}
+      {data?.arrow === "double" && <EdgeLabelRenderer><div className="edge-arrow-overlay" style={{ left: lineSource.x, top: lineSource.y, borderLeftColor: data?.stroke, transform: `translate(-100%, -50%) rotate(${startAngle}deg)` }} /></EdgeLabelRenderer>}
       {data?.label && (
         <EdgeLabelRenderer>
           <div
