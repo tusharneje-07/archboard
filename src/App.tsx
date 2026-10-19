@@ -86,6 +86,7 @@ type NodeData = {
   width?: number;
   height?: number;
   clipContent?: boolean;
+  layout?: "free" | "grid" | "horizontal" | "vertical";
 };
 type EdgeData = {
   route: "straight" | "orthogonal" | "free";
@@ -157,6 +158,7 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
   align: kind === "text" ? "left" : "center",
   vertical: "center",
   padding: 12,
+  layout: kind === "container" ? "grid" : "free",
 });
 const initialNodes: Node<NodeData>[] = [
   {
@@ -542,6 +544,7 @@ function Editor() {
   const layerHost = useRef<HTMLDivElement | null>(null);
   const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
   const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
+  const selectLayer = (id: string) => { setSelectedId(id); setNodes((items) => items.map((item) => ({ ...item, selected: item.id === id }))); };
   useEffect(() => {
     const host = document.createElement("div");
     host.className = "layers-float-host";
@@ -561,7 +564,7 @@ function Editor() {
       <LayerView
         nodes={nodes}
         selectedId={selectedId}
-        select={setSelectedId}
+        select={selectLayer}
         moveToFrame={moveNodeToFrame}
       />,
     );
@@ -683,7 +686,7 @@ function Editor() {
   const arrangeFrame = (frameId: string, items: Node<NodeData>[]) => {
     const frame = items.find((item) => item.id === frameId), children = items.filter((item) => item.parentId === frameId && item.data.kind !== "container");
     if (!frame || !children.length) return items;
-    const columns = Math.max(1, Math.ceil(Math.sqrt(children.length))), gap = 18, padding = 24, titleSpace = 48;
+    const columns = frame.data.layout === "horizontal" ? children.length : frame.data.layout === "vertical" ? 1 : Math.max(1, Math.ceil(Math.sqrt(children.length))), gap = 18, padding = 24, titleSpace = 48;
     const cellWidth = Math.max(150, ...children.map((child) => Number(child.style?.width ?? child.data.width ?? 170))), cellHeight = Math.max(56, ...children.map((child) => Number(child.style?.height ?? child.data.height ?? 76)));
     const rows = Math.ceil(children.length / columns), width = padding * 2 + columns * cellWidth + (columns - 1) * gap, height = titleSpace + padding + rows * cellHeight + (rows - 1) * gap + padding;
     return items.map((item) => {
@@ -1478,11 +1481,19 @@ function AppearancePanel({
       </Field>
       {data.kind === "container" && (
         <>
+          <div className="section-label">Flow</div>
+          <div className="segmented">
+            <button className={(data.layout ?? "grid") === "free" ? "active" : ""} onClick={() => update({ layout: "free" })}>Free</button>
+            <button className={(data.layout ?? "grid") === "grid" ? "active" : ""} onClick={() => update({ layout: "grid" })}>Grid</button>
+            <button className={data.layout === "horizontal" ? "active" : ""} onClick={() => update({ layout: "horizontal" })}>Row</button>
+            <button className={data.layout === "vertical" ? "active" : ""} onClick={() => update({ layout: "vertical" })}>Column</button>
+          </div>
           <button className="arrange-frame" onClick={arrange}><Grid3X3 size={14} /> Arrange children</button>
           <label className="frame-toggle"><input type="checkbox" checked={data.clipContent ?? false} onChange={(e) => update({ clipContent: e.target.checked })} /> Clip content to frame</label>
         </>
       )}
-      <div className="section-label">Size & layout</div>
+      {data.kind !== "container" && <><div className="section-label">Alignment</div><div className="segmented"><button className={data.align === "left" ? "active" : ""} onClick={() => update({ align: "left" })}><AlignLeft size={14} /></button><button className={data.align === "center" ? "active" : ""} onClick={() => update({ align: "center" })}><AlignCenter size={14} /></button><button className={data.align === "right" ? "active" : ""} onClick={() => update({ align: "right" })}><AlignRight size={14} /></button></div></>}
+      <div className="section-label">{data.kind === "container" ? "Frame alignment" : "Vertical alignment"}</div>
       <div className="align-row">
         <button onClick={() => update({ vertical: "top" })}>
           <ArrowUp size={15} />
