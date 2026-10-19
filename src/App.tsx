@@ -235,8 +235,8 @@ function normalizeLoadedNodes(input: Node<NodeData>[]): Node<NodeData>[] {
   const absolute = (node: Node<NodeData>): { x: number; y: number } => {
     const parent = node.parentId ? nodes.find((candidate) => candidate.id === node.parentId) : undefined;
     if (!parent) return node.position;
-    const parentPosition = absolute(parent);
-    return { x: parentPosition.x + node.position.x, y: parentPosition.y + node.position.y };
+    const parentPosition = absolute(parent), parentWidth = Number(parent.style?.width ?? parent.data.width ?? 330), parentHeight = Number(parent.style?.height ?? parent.data.height ?? 220), savedAsAbsolute = node.position.x > parentWidth || node.position.y > parentHeight;
+    return savedAsAbsolute ? node.position : { x: parentPosition.x + node.position.x, y: parentPosition.y + node.position.y };
   };
   const frames = nodes.filter((node) => node.data.kind === "container");
   return nodes.map((node) => {
@@ -659,7 +659,9 @@ function Editor() {
     selectedEdge = edges.find((e) => e.id === selectedId);
   const absolutePosition = (node: Node<NodeData>, allNodes = nodes): { x: number; y: number } => {
     const parent = node.parentId ? allNodes.find((item) => item.id === node.parentId) : undefined;
-    return parent ? { x: node.position.x + absolutePosition(parent, allNodes).x, y: node.position.y + absolutePosition(parent, allNodes).y } : node.position;
+    if (!parent) return node.position;
+    const parentPosition = absolutePosition(parent, allNodes), parentWidth = Number(parent.style?.width ?? parent.data.width ?? 330), parentHeight = Number(parent.style?.height ?? parent.data.height ?? 220), savedAsAbsolute = node.position.x > parentWidth || node.position.y > parentHeight;
+    return savedAsAbsolute ? node.position : { x: node.position.x + parentPosition.x, y: node.position.y + parentPosition.y };
   };
   const frameAt = (position: { x: number; y: number }, width: number, height: number, ignoredId?: string) =>
     nodes.find((frame) => {
