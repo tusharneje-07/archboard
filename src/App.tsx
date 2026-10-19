@@ -442,8 +442,9 @@ function SmartEdge({
       strokeWidth="1"
     />
   );
-  const endTip = { x: targetX + Math.cos((endAngle * Math.PI) / 180) * 8, y: targetY + Math.sin((endAngle * Math.PI) / 180) * 8 };
-  const startTip = { x: sourceX + Math.cos((startAngle * Math.PI) / 180) * 8, y: sourceY + Math.sin((startAngle * Math.PI) / 180) * 8 };
+  const arrowReach = 4;
+  const endTip = { x: targetX + Math.cos((endAngle * Math.PI) / 180) * arrowReach, y: targetY + Math.sin((endAngle * Math.PI) / 180) * arrowReach };
+  const startTip = { x: sourceX + Math.cos((startAngle * Math.PI) / 180) * arrowReach, y: sourceY + Math.sin((startAngle * Math.PI) / 180) * arrowReach };
   return (
     <>
       <BaseEdge
