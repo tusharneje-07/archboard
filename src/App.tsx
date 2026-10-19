@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { create } from "zustand";
 import DOMPurify from "dompurify";
-import { toPng, toSvg } from "html-to-image";
+import { toJpeg, toPng, toSvg } from "html-to-image";
 import {
   addEdge,
   Background,
@@ -500,7 +500,12 @@ function Editor() {
     ),
     [grid, setGrid] = useState(true),
     [snap, setSnap] = useState(true),
-    [leftTab, setLeftTab] = useState<"shapes" | "layers">("shapes");
+    [leftTab, setLeftTab] = useState<"shapes" | "layers">("shapes"),
+    [exportOpen, setExportOpen] = useState(false),
+    [exportFormat, setExportFormat] = useState<"png" | "svg" | "jpg">("png"),
+    [exportTransparent, setExportTransparent] = useState(false),
+    [exportQuality, setExportQuality] = useState(90),
+    [exportDpi, setExportDpi] = useState(144);
   const reactFlow = useReactFlow(),
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
@@ -936,17 +941,18 @@ function Editor() {
     if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
-  const exportImage = async (format: "png" | "svg") => {
+  const exportImage = async (format: "png" | "svg" | "jpg" = exportFormat) => {
     if (!canvas.current) return;
-    const data =
-      format === "png"
-        ? await toPng(canvas.current, { backgroundColor: "#f8fafc" })
-        : await toSvg(canvas.current, { backgroundColor: "#f8fafc" });
+    const backgroundColor = exportTransparent ? undefined : "#f8fafc";
+    const options = { backgroundColor, quality: exportQuality / 100, pixelRatio: exportDpi / 96 };
+    const data = format === "png" ? await toPng(canvas.current, options) : format === "jpg" ? await toJpeg(canvas.current, options) : await toSvg(canvas.current, { backgroundColor });
     const a = document.createElement("a");
     a.href = data;
-    a.download = `archboard.${format}`;
+    a.download = `archboard.${format === "jpg" ? "jpg" : format}`;
     a.click();
+    setExportOpen(false);
   };
+  const downloadSkill = async () => { const response = await fetch("/SKILL.md"); const content = response.ok ? await response.text() : "Use Archboard's nodes and edges JSON format to draft an importable architecture diagram."; const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([content], { type: "text/markdown" })); a.download = "SKILL.md"; a.click(); URL.revokeObjectURL(a.href); };
   const exportJson = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
@@ -1006,12 +1012,8 @@ function Editor() {
               }
             />
           </label>
-          <button
-            className="icon-button"
-            onClick={groupSelected}
-            title="Group selection"
-          >
-            <Group size={16} />
+          <button className="icon-button" onClick={downloadSkill} title="Download Archboard skill">
+            <FileJson size={16} />
           </button>
           <button
             className="icon-button"
@@ -1020,9 +1022,9 @@ function Editor() {
           >
             <X size={16} />
           </button>
-          <button className="primary" onClick={() => exportImage("png")}>
+          <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
-            Export PNG
+            Export image
           </button>
         </div>
       </header>
@@ -1236,6 +1238,21 @@ function Editor() {
           )}
         </aside>
       </div>
+      {exportOpen && (
+        <div className="export-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setExportOpen(false)}>
+          <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
+            <div className="export-dialog-head"><div><span className="eyebrow">Canvas export</span><h2 id="export-title">Export image</h2></div><button className="quiet" onClick={() => setExportOpen(false)}><X size={17} /></button></div>
+            <div className="export-options">
+              <Field label="Format"><select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}><option value="png">PNG</option><option value="svg">SVG</option><option value="jpg">JPG</option></select></Field>
+              <Field label="DPI"><select value={exportDpi} onChange={(e) => setExportDpi(+e.target.value)}><option value="96">96 DPI</option><option value="144">144 DPI</option><option value="192">192 DPI</option><option value="300">300 DPI</option></select></Field>
+              <Field label="Quality"><input type="range" min="40" max="100" value={exportQuality} onChange={(e) => setExportQuality(+e.target.value)} /><b>{exportQuality}%</b></Field>
+              <label className="export-check"><input type="checkbox" checked={exportTransparent} onChange={(e) => setExportTransparent(e.target.checked)} /> Transparent background</label>
+            </div>
+            <p className="helper">Exports the current canvas without the editor sidebars. PNG and JPG use the selected DPI and quality; SVG remains vector.</p>
+            <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" onClick={() => exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
