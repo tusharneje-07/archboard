@@ -951,10 +951,12 @@ function Editor() {
   const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat) => {
     if (format === "json") { exportJson(); setExportOpen(false); return; }
     if (!canvas.current) return;
-    const padding = 48, positions = nodes.map((node) => ({ node, position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) }));
-    if (!positions.length) return;
-    const minX = Math.min(...positions.map((item) => item.position.x)), minY = Math.min(...positions.map((item) => item.position.y)), maxX = Math.max(...positions.map((item) => item.position.x + item.width)), maxY = Math.max(...positions.map((item) => item.position.y + item.height)), exportWidth = Math.max(1, maxX - minX + padding * 2), exportHeight = Math.max(1, maxY - minY + padding * 2);
     const originalViewport = reactFlow.getViewport(), originalWidth = canvas.current.style.width, originalHeight = canvas.current.style.height;
+    const canvasRect = canvas.current.getBoundingClientRect(), flowRects = Array.from(canvas.current.querySelectorAll<HTMLElement>(".react-flow__node, .edge-label")).map((element) => { const rect = element.getBoundingClientRect(); return { x: (rect.left - canvasRect.left - originalViewport.x) / originalViewport.zoom, y: (rect.top - canvasRect.top - originalViewport.y) / originalViewport.zoom, width: rect.width / originalViewport.zoom, height: rect.height / originalViewport.zoom }; });
+    const fallbackRects = nodes.map((node) => ({ position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) })).map((item) => ({ x: item.position.x, y: item.position.y, width: item.width, height: item.height }));
+    const bounds = flowRects.length ? flowRects : fallbackRects;
+    if (!bounds.length) return;
+    const padding = 20, minX = Math.min(...bounds.map((item) => item.x)), minY = Math.min(...bounds.map((item) => item.y)), maxX = Math.max(...bounds.map((item) => item.x + item.width)), maxY = Math.max(...bounds.map((item) => item.y + item.height)), exportWidth = Math.max(1, maxX - minX + padding * 2), exportHeight = Math.max(1, maxY - minY + padding * 2);
     canvas.current.classList.add("exporting");
     canvas.current.style.width = `${exportWidth}px`;
     canvas.current.style.height = `${exportHeight}px`;
@@ -1021,10 +1023,6 @@ function Editor() {
             <Plus size={16} />
             New
           </button>
-          <button onClick={() => setExportOpen(true)}>
-            <Download size={16} />
-            Export
-          </button>
           <label className="icon-button" title="Import JSON">
             <Upload size={17} />
             <input
@@ -1041,7 +1039,7 @@ function Editor() {
           </button>
           <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
-            Export image
+            Export
           </button>
         </div>
       </header>
