@@ -230,13 +230,37 @@ const initialEdges: Edge<EdgeData>[] = [
   },
 ];
 
+function normalizeLoadedNodes(input: Node<NodeData>[]): Node<NodeData>[] {
+  const nodes = input.map((node) => ({ ...node }));
+  const absolute = (node: Node<NodeData>): { x: number; y: number } => {
+    const parent = node.parentId ? nodes.find((candidate) => candidate.id === node.parentId) : undefined;
+    if (!parent) return node.position;
+    const parentPosition = absolute(parent);
+    return { x: parentPosition.x + node.position.x, y: parentPosition.y + node.position.y };
+  };
+  const frames = nodes.filter((node) => node.data.kind === "container");
+  return nodes.map((node) => {
+    if (node.data.kind === "container") return node;
+    const position = absolute(node), width = Number(node.style?.width ?? node.data.width ?? 170), height = Number(node.style?.height ?? node.data.height ?? 76);
+    const frame = frames.find((candidate) => {
+      if (candidate.id === node.id) return false;
+      const framePosition = absolute(candidate), frameWidth = Number(candidate.style?.width ?? candidate.data.width ?? 330), frameHeight = Number(candidate.style?.height ?? candidate.data.height ?? 220);
+      return position.x >= framePosition.x && position.y >= framePosition.y && position.x + width <= framePosition.x + frameWidth && position.y + height <= framePosition.y + frameHeight;
+    });
+    if (!frame) return node.parentId ? { ...node, parentId: undefined, extent: undefined, position } : node;
+    const framePosition = absolute(frame);
+    return { ...node, parentId: frame.id, extent: "parent" as const, position: { x: position.x - framePosition.x, y: position.y - framePosition.y } };
+  });
+}
+
+function loadSavedDiagram() {
+  const saved = JSON.parse(localStorage.getItem("archboard-diagram") || "null");
+  return { nodes: saved?.nodes ? normalizeLoadedNodes(saved.nodes) : initialNodes, edges: saved?.edges ?? initialEdges };
+}
+
 const useDiagram = create<DiagramState>((set, get) => ({
-  nodes:
-    JSON.parse(localStorage.getItem("archboard-diagram") || "null")?.nodes ??
-    initialNodes,
-  edges:
-    JSON.parse(localStorage.getItem("archboard-diagram") || "null")?.edges ??
-    initialEdges,
+  nodes: loadSavedDiagram().nodes,
+  edges: loadSavedDiagram().edges,
   past: [],
   future: [],
   snapshot: () => {
@@ -510,7 +534,6 @@ function Editor() {
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
   const layerRoot = useRef<Root | null>(null);
-  const normalizedFrames = useRef(false);
   const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
   const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
   useEffect(() => {
@@ -658,37 +681,6 @@ function Editor() {
       return index === -1 ? item : { ...item, zIndex: 2, position: { x: padding + (index % columns) * (cellWidth + gap), y: titleSpace + (Math.floor(index / columns) * (cellHeight + gap)) } };
     });
   };
-  useEffect(() => {
-    if (normalizedFrames.current) return;
-    normalizedFrames.current = true;
-    let next = nodes;
-    next = next.map((item) => {
-      if (!item.parentId) return item;
-      const parent = nodes.find((candidate) => candidate.id === item.parentId);
-      if (!parent) return { ...item, parentId: undefined, extent: undefined };
-      const itemPosition = absolutePosition(item), parentPosition = absolutePosition(parent), width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), parentWidth = Number(parent.style?.width ?? parent.data.width ?? 330), parentHeight = Number(parent.style?.height ?? parent.data.height ?? 220), fullyInside = itemPosition.x >= parentPosition.x && itemPosition.y >= parentPosition.y && itemPosition.x + width <= parentPosition.x + parentWidth && itemPosition.y + height <= parentPosition.y + parentHeight;
-      return fullyInside ? item : { ...item, parentId: undefined, extent: undefined, position: itemPosition };
-    });
-    next.filter((item) => !item.parentId && item.data.kind !== "container").forEach((item) => {
-      const width = Number(item.style?.width ?? item.data.width ?? 170), height = Number(item.style?.height ?? item.data.height ?? 76), frame = nodes.find((candidate) => {
-        if (candidate.data.kind !== "container") return false;
-        const itemPosition = absolutePosition(item), framePosition = absolutePosition(candidate), frameWidth = Number(candidate.style?.width ?? candidate.data.width ?? 330), frameHeight = Number(candidate.style?.height ?? candidate.data.height ?? 220);
-        return itemPosition.x >= framePosition.x && itemPosition.y >= framePosition.y && itemPosition.x + width <= framePosition.x + frameWidth && itemPosition.y + height <= framePosition.y + frameHeight;
-      });
-      if (frame) {
-        const framePosition = absolutePosition(frame);
-        next = next.map((candidate) => candidate.id === item.id ? { ...candidate, parentId: frame.id, extent: "parent" as const, position: { x: item.position.x - framePosition.x, y: item.position.y - framePosition.y } } : candidate);
-      }
-    });
-    next.filter((item) => item.data.kind === "container").forEach((frame) => {
-      next = arrangeFrame(frame.id, next);
-    });
-    const changed = next.some((item, index) => {
-      const current = nodes[index];
-      return item.id !== current?.id || item.position.x !== current.position.x || item.position.y !== current.position.y || item.style?.width !== current.style?.width || item.style?.height !== current.style?.height;
-    });
-    if (changed) setNodes(next);
-  }, [nodes]);
   useEffect(() => {
     let next = nodes, changed = false, framesToArrange = new Set<string>();
     nodes.filter((item) => !item.parentId && item.data.kind !== "container").forEach((item) => {
