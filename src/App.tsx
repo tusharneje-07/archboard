@@ -1666,13 +1666,6 @@ function LayerView({
   ];
   return (
     <div className="layers-float">
-      <div className="layers-float-head">
-        <span>
-          <span className="eyebrow">Document</span>
-          <strong>Layers</strong>
-        </span>
-        <span className="layers-count">{nodes.length}</span>
-      </div>
       <div className="layers-canvas-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId) moveToFrame(nodeId); }}>Canvas</div>
       <div className="layers-float-list">
         {roots.flatMap((node) => renderLayer(node, 0))}
