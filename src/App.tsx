@@ -675,6 +675,11 @@ function Editor() {
     const parentPosition = absolutePosition(parent, allNodes), parentWidth = Number(parent.style?.width ?? parent.data.width ?? 330), parentHeight = Number(parent.style?.height ?? parent.data.height ?? 220), savedAsAbsolute = node.position.x > parentWidth || node.position.y > parentHeight;
     return savedAsAbsolute ? node.position : { x: node.position.x + parentPosition.x, y: node.position.y + parentPosition.y };
   };
+  const getExportBounds = () => {
+    const items = nodes.map((node) => ({ position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) }));
+    if (!items.length) return null;
+    return { minX: Math.min(...items.map((item) => item.position.x)), minY: Math.min(...items.map((item) => item.position.y)), maxX: Math.max(...items.map((item) => item.position.x + item.width)), maxY: Math.max(...items.map((item) => item.position.y + item.height)) };
+  };
   const frameAt = (position: { x: number; y: number }, width: number, height: number, ignoredId?: string) =>
     nodes.find((frame) => {
       if (frame.data.kind !== "container" || frame.id === ignoredId) return false;
@@ -947,16 +952,14 @@ function Editor() {
     if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
-  useEffect(() => { if (!exportOpen || !canvas.current) return; toPng(canvas.current, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1 }).then(setExportPreview).catch(() => setExportPreview("")); }, [exportOpen, exportTransparent, nodes, edges]);
+  useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 20, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => { toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px` } }).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; reactFlow.setViewport(viewport); }); }); }, [exportOpen, exportTransparent, nodes, edges]);
   const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat) => {
     if (format === "json") { exportJson(); setExportOpen(false); return; }
     if (!canvas.current) return;
     const originalViewport = reactFlow.getViewport(), originalWidth = canvas.current.style.width, originalHeight = canvas.current.style.height;
-    const canvasRect = canvas.current.getBoundingClientRect(), flowRects = Array.from(canvas.current.querySelectorAll<HTMLElement>(".react-flow__node, .edge-label")).map((element) => { const rect = element.getBoundingClientRect(); return { x: (rect.left - canvasRect.left - originalViewport.x) / originalViewport.zoom, y: (rect.top - canvasRect.top - originalViewport.y) / originalViewport.zoom, width: rect.width / originalViewport.zoom, height: rect.height / originalViewport.zoom }; });
-    const fallbackRects = nodes.map((node) => ({ position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) })).map((item) => ({ x: item.position.x, y: item.position.y, width: item.width, height: item.height }));
-    const bounds = flowRects.length ? flowRects : fallbackRects;
-    if (!bounds.length) return;
-    const padding = 20, minX = Math.min(...bounds.map((item) => item.x)), minY = Math.min(...bounds.map((item) => item.y)), maxX = Math.max(...bounds.map((item) => item.x + item.width)), maxY = Math.max(...bounds.map((item) => item.y + item.height)), exportWidth = Math.max(1, maxX - minX + padding * 2), exportHeight = Math.max(1, maxY - minY + padding * 2);
+    const bounds = getExportBounds();
+    if (!bounds) return;
+    const padding = 20, minX = bounds.minX, minY = bounds.minY, exportWidth = Math.max(1, bounds.maxX - bounds.minX + padding * 2), exportHeight = Math.max(1, bounds.maxY - bounds.minY + padding * 2);
     canvas.current.classList.add("exporting");
     canvas.current.style.width = `${exportWidth}px`;
     canvas.current.style.height = `${exportHeight}px`;
