@@ -525,20 +525,25 @@ function Editor() {
     [grid, setGrid] = useState(true),
     [snap, setSnap] = useState(true),
     [leftTab, setLeftTab] = useState<"shapes" | "layers">("shapes"),
+    [leftWidth, setLeftWidth] = useState(250),
+    [rightWidth, setRightWidth] = useState(250),
     [exportOpen, setExportOpen] = useState(false),
-    [exportFormat, setExportFormat] = useState<"png" | "svg" | "jpg">("png"),
+    [exportFormat, setExportFormat] = useState<"png" | "svg" | "jpg" | "json">("png"),
     [exportTransparent, setExportTransparent] = useState(false),
     [exportQuality, setExportQuality] = useState(90),
-    [exportDpi, setExportDpi] = useState(144);
+    [exportDpi, setExportDpi] = useState(144),
+    [exportPreview, setExportPreview] = useState("");
   const reactFlow = useReactFlow(),
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
   const layerRoot = useRef<Root | null>(null);
+  const layerHost = useRef<HTMLDivElement | null>(null);
   const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
   const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
   useEffect(() => {
     const host = document.createElement("div");
     host.className = "layers-float-host";
+    layerHost.current = host;
     const panel = document.querySelector(".left-panel");
     const footer = panel?.querySelector(".left-footer");
     if (panel && footer) panel.insertBefore(host, footer);
@@ -559,6 +564,8 @@ function Editor() {
       />,
     );
   }, [nodes, selectedId]);
+  useEffect(() => { if (layerHost.current) layerHost.current.style.display = leftTab === "layers" ? "block" : "none"; }, [leftTab]);
+  const startPanelResize = (side: "left" | "right", event: React.PointerEvent) => { const start = event.clientX, width = side === "left" ? leftWidth : rightWidth; const move = (current: PointerEvent) => { const next = Math.max(190, Math.min(420, width + (side === "left" ? current.clientX - start : start - current.clientX))); side === "left" ? setLeftWidth(next) : setRightWidth(next); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); };
   useEffect(() => {
     const onDragStart = (event: DragEvent) => {
       const item = (event.target as HTMLElement).closest(".shape-item");
@@ -935,7 +942,9 @@ function Editor() {
     if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
-  const exportImage = async (format: "png" | "svg" | "jpg" = exportFormat) => {
+  useEffect(() => { if (!exportOpen || !canvas.current) return; toPng(canvas.current, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1 }).then(setExportPreview).catch(() => setExportPreview("")); }, [exportOpen, exportTransparent, nodes, edges]);
+  const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat) => {
+    if (format === "json") { exportJson(); setExportOpen(false); return; }
     if (!canvas.current) return;
     const padding = 48, positions = nodes.map((node) => ({ node, position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) }));
     if (!positions.length) return;
@@ -1007,7 +1016,7 @@ function Editor() {
             <Plus size={16} />
             New
           </button>
-          <button onClick={exportJson}>
+          <button onClick={() => setExportOpen(true)}>
             <Download size={16} />
             Export
           </button>
@@ -1025,13 +1034,6 @@ function Editor() {
           <button className="icon-button" onClick={downloadSkill} title="Download Archboard skill">
             <FileJson size={16} />
           </button>
-          <button
-            className="icon-button"
-            onClick={ungroupSelected}
-            title="Ungroup container"
-          >
-            <X size={16} />
-          </button>
           <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
             Export image
@@ -1039,8 +1041,12 @@ function Editor() {
         </div>
       </header>
       <div className="workspace">
-        <aside className="left-panel">
-          <div className="panel-heading">
+        <aside className="left-panel" style={{ width: leftWidth, flexBasis: leftWidth }}>
+          <div className="panel-tabs">
+            <button className={leftTab === "shapes" ? "active" : ""} onClick={() => setLeftTab("shapes")}>Shapes</button>
+            <button className={leftTab === "layers" ? "active" : ""} onClick={() => setLeftTab("layers")}>Layers</button>
+          </div>
+          {leftTab === "shapes" && <><div className="panel-heading">
             <div>
               <span className="eyebrow">Library</span>
               <h2>Shapes</h2>
@@ -1072,7 +1078,7 @@ function Editor() {
                 <Plus size={13} className="shape-plus" />
               </button>
             ))}
-          </div>
+          </div></>}
           <div className="left-footer">
             <div className="hint">
               <Hand size={14} /> Space + drag to pan
@@ -1081,23 +1087,10 @@ function Editor() {
               <MousePointer2 size={14} /> Shift + click to multi-select
             </div>
           </div>
+          <div className="panel-resizer right-edge" onPointerDown={(event) => startPanelResize("left", event)} />
         </aside>
         <section className="canvas-shell">
           <div className="canvas-toolbar">
-            <div className="toolbar-group">
-              <button
-                className={grid ? "active" : ""}
-                onClick={() => setGrid(!grid)}
-              >
-                <Grid3X3 size={15} /> Grid
-              </button>
-              <button
-                className={snap ? "active" : ""}
-                onClick={() => setSnap(!snap)}
-              >
-                <span className="snap-icon">·</span> Snap
-              </button>
-            </div>
             <div className="toolbar-group">
               <button onClick={() => reactFlow.zoomOut()}>
                 <span>−</span>
@@ -1170,7 +1163,7 @@ function Editor() {
             </ReactFlow>
           </div>
         </section>
-        <aside className="right-panel">
+        <aside className="right-panel" style={{ width: rightWidth, flexBasis: rightWidth }}>
           <div className="panel-heading">
             <div>
               <span className="eyebrow">Inspector</span>
@@ -1246,19 +1239,20 @@ function Editor() {
               <span>Properties and styling controls will appear here.</span>
             </div>
           )}
+          <div className="panel-resizer left-edge" onPointerDown={(event) => startPanelResize("right", event)} />
         </aside>
       </div>
       {exportOpen && (
         <div className="export-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setExportOpen(false)}>
           <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
-            <div className="export-dialog-head"><div><span className="eyebrow">Canvas export</span><h2 id="export-title">Export image</h2></div><button className="quiet" onClick={() => setExportOpen(false)}><X size={17} /></button></div>
+            <div className="export-dialog-head"><div><span className="eyebrow">Canvas export</span><h2 id="export-title">Export</h2></div><button className="quiet" onClick={() => setExportOpen(false)}><X size={17} /></button></div>
+            {exportPreview && <div className="export-preview"><img src={exportPreview} alt="Diagram export preview" /></div>}
             <div className="export-options">
-              <Field label="Format"><select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}><option value="png">PNG</option><option value="svg">SVG</option><option value="jpg">JPG</option></select></Field>
+              <Field label="Format"><select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}><option value="json">JSON</option><option value="png">PNG</option><option value="svg">SVG</option><option value="jpg">JPG</option></select></Field>
               <Field label="DPI"><select value={exportDpi} onChange={(e) => setExportDpi(+e.target.value)}><option value="96">96 DPI</option><option value="144">144 DPI</option><option value="192">192 DPI</option><option value="300">300 DPI</option></select></Field>
-              <Field label="Quality"><input type="range" min="40" max="100" value={exportQuality} onChange={(e) => setExportQuality(+e.target.value)} /><b>{exportQuality}%</b></Field>
-              <label className="export-check"><input type="checkbox" checked={exportTransparent} onChange={(e) => setExportTransparent(e.target.checked)} /> Transparent background</label>
+              {exportFormat !== "json" && <><Field label="Quality"><input type="range" min="40" max="100" value={exportQuality} onChange={(e) => setExportQuality(+e.target.value)} /><b>{exportQuality}%</b></Field><label className="export-check"><input type="checkbox" checked={exportTransparent} onChange={(e) => setExportTransparent(e.target.checked)} /> Transparent background</label></>}
             </div>
-            <p className="helper">Exports the current canvas without the editor sidebars. PNG and JPG use the selected DPI and quality; SVG remains vector.</p>
+            <p className="helper">Preview shows the diagram artwork before download. JSON exports the complete editable structure; PNG, JPG, and SVG exclude editor controls.</p>
             <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" onClick={() => exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div>
           </section>
         </div>
@@ -1649,6 +1643,7 @@ function LayerView({
   select: (id: string) => void;
   moveToFrame: (nodeId: string, frameId?: string) => void;
 }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const roots = nodes.filter((node) => !node.parentId).slice().reverse();
   const renderLayer = (node: Node<NodeData>, depth: number): React.ReactNode[] => [
     <button
@@ -1661,12 +1656,13 @@ function LayerView({
       onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const nodeId = event.dataTransfer.getData("application/archboard-layer") || event.dataTransfer.getData("text/plain"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
       onClick={() => select(node.id)}
     >
+      <span className="layer-caret" onClick={(event) => { event.stopPropagation(); setExpanded((current) => ({ ...current, [node.id]: current[node.id] === false })); }}>{nodes.some((child) => child.parentId === node.id) ? expanded[node.id] === false ? "›" : "⌄" : ""}</span>
       <span className={`layer-tree-guide ${depth ? "visible" : ""}`} />
       <span className={`layer-dot ${node.data.kind}`} />
       <span>{node.data.label.replace(/<[^>]+>/g, "").slice(0, 22) || "Untitled"}</span>
       <small>{node.data.kind === "container" ? "FRAME" : node.data.kind.toUpperCase()}</small>
     </button>,
-    ...nodes.filter((child) => child.parentId === node.id).slice().reverse().flatMap((child) => renderLayer(child, depth + 1)),
+    ...(expanded[node.id] !== false ? nodes.filter((child) => child.parentId === node.id).slice().reverse().flatMap((child) => renderLayer(child, depth + 1)) : []),
   ];
   return (
     <div className="layers-float">
