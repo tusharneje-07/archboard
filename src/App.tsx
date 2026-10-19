@@ -30,10 +30,9 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
   Box,
   ChevronDown,
   Circle,
@@ -44,10 +43,12 @@ import {
   Group,
   Hand,
   Hexagon,
+  Home,
   Link2,
   MousePointer2,
   PanelRight,
   Pentagon,
+  Pipette,
   Plus,
   Redo2,
   Square,
@@ -74,6 +75,11 @@ type NodeData = {
   textColor: string;
   borderWidth: number;
   borderStyle: "solid" | "dashed";
+  dashLength?: number;
+  dashGap?: number;
+  fillOpacity?: number;
+  borderOpacity?: number;
+  textOpacity?: number;
   radius: number;
   fontFamily: string;
   fontSize: number;
@@ -102,6 +108,7 @@ type EdgeData = {
 };
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramSnapshot = { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
+type Project = DiagramSnapshot & { id: string; name: string; createdAt: number; updatedAt: number };
 type DiagramState = {
   nodes: Node<NodeData>[];
   edges: Edge<EdgeData>[];
@@ -151,6 +158,11 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
   textColor: "#173746",
   borderWidth: 1,
   borderStyle: "solid",
+  dashLength: 8,
+  dashGap: 5,
+  fillOpacity: 100,
+  borderOpacity: 100,
+  textOpacity: 100,
   radius: kind === "rounded" || kind === "container" ? 10 : 2,
   fontFamily: "Arial",
   fontSize: 14,
@@ -259,6 +271,24 @@ function loadSavedDiagram() {
   const saved = JSON.parse(localStorage.getItem("archboard-diagram") || "null");
   return { nodes: saved?.nodes ? normalizeLoadedNodes(saved.nodes) : initialNodes, edges: saved?.edges ?? initialEdges };
 }
+const projectsKey = "archboard-projects";
+function readProjects(): Project[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(projectsKey) || "null");
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch { /* Recover by migrating the legacy diagram below. */ }
+  const diagram = loadSavedDiagram(), now = Date.now();
+  const project: Project = { id: `project-${now}`, name: "Untitled architecture", ...diagram, createdAt: now, updatedAt: now };
+  localStorage.setItem(projectsKey, JSON.stringify([project]));
+  return [project];
+}
+function writeProjects(projects: Project[]) {
+  localStorage.setItem(projectsKey, JSON.stringify(projects));
+}
+function navigate(path: string) {
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
 
 const useDiagram = create<DiagramState>((set, get) => ({
   nodes: loadSavedDiagram().nodes,
@@ -318,17 +348,24 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
     <div
       className={`diagram-node ${data.kind} ${selected ? "is-selected" : ""}`}
       style={{
-        background: data.kind === "text" ? "transparent" : data.fill,
-        borderColor: data.border,
-        borderWidth: data.kind === "text" ? 0 : data.borderWidth,
+         background: data.kind === "text" ? "transparent" : rgba(data.fill, data.fillOpacity),
+         borderColor: rgba(data.border, data.borderOpacity),
+         borderWidth: data.kind === "text" || data.kind === "container" ? 0 : data.borderWidth,
         borderStyle: data.borderStyle,
         borderRadius: data.kind === "ellipse" ? "50%" : data.radius,
-        color: data.textColor,
+         color: rgba(data.textColor, data.textOpacity),
         fontFamily: data.fontFamily,
         fontSize: data.fontSize,
-        fontWeight: data.fontWeight,
-        textAlign: data.align,
-        justifyContent:
+         fontWeight: data.fontWeight,
+         textAlign: data.align,
+         flexDirection: "column",
+         alignItems:
+           data.align === "left"
+             ? "flex-start"
+             : data.align === "right"
+               ? "flex-end"
+               : "center",
+         justifyContent:
           data.vertical === "top"
             ? "flex-start"
             : data.vertical === "bottom"
@@ -338,6 +375,21 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         overflow: data.kind === "container" && data.clipContent ? "hidden" : "visible",
       }}
     >
+      {data.kind === "container" && data.borderWidth > 0 && (
+        <svg className="container-border" aria-hidden="true" width="100%" height="100%" preserveAspectRatio="none">
+          <rect
+            x={data.borderWidth / 2}
+            y={data.borderWidth / 2}
+            width={`calc(100% - ${data.borderWidth}px)`}
+            height={`calc(100% - ${data.borderWidth}px)`}
+            rx={data.radius}
+            fill="none"
+            stroke={rgba(data.border, data.borderOpacity)}
+            strokeWidth={data.borderWidth}
+            strokeDasharray={data.borderStyle === "dashed" ? `${data.dashLength ?? 8} ${data.dashGap ?? 5}` : undefined}
+          />
+        </svg>
+      )}
       {selected && (
         <NodeResizer
           minWidth={60}
@@ -504,25 +556,70 @@ const shapeOptions: [ShapeKind, string, typeof Square][] = [
 ];
 
 function App() {
-  return (
-    <ReactFlowProvider>
-      <Editor />
-    </ReactFlowProvider>
-  );
+  const [path, setPath] = useState(window.location.pathname);
+  const [projects, setProjects] = useState(readProjects);
+  useEffect(() => {
+    const onPopState = () => { setPath(window.location.pathname); setProjects(readProjects()); };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  const projectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1];
+  if (!projectId) return <HomeScreen projects={projects} refresh={() => setProjects(readProjects())} />;
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) {
+    navigate("/");
+    return null;
+  }
+  return <ReactFlowProvider><Editor key={project.id} project={project} /></ReactFlowProvider>;
 }
-function Editor() {
+function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () => void }) {
+  const [dialog, setDialog] = useState<{ type: "rename" | "delete"; project: Project } | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const createProject = () => {
+    const now = Date.now(), project: Project = { id: `project-${now}`, name: "Untitled architecture", nodes: [], edges: [], createdAt: now, updatedAt: now };
+    writeProjects([project, ...projects]);
+    refresh();
+    navigate(`/project/${project.id}`);
+  };
+  const renameProject = (project: Project) => { setDraftName(project.name); setDialog({ type: "rename", project }); };
+  const duplicateProject = (project: Project) => {
+    const now = Date.now(), copy: Project = { ...project, id: `project-${now}`, name: `${project.name} copy`, createdAt: now, updatedAt: now, nodes: project.nodes.map((node) => ({ ...node, id: `${node.id}-${now}` })), edges: project.edges.map((edge) => ({ ...edge, id: `${edge.id}-${now}`, source: `${edge.source}-${now}`, target: `${edge.target}-${now}` })) };
+    writeProjects([copy, ...projects]);
+    refresh();
+  };
+  const deleteProject = (project: Project) => setDialog({ type: "delete", project });
+  const closeDialog = () => setDialog(null);
+  const submitDialog = () => {
+    if (!dialog) return;
+    if (dialog.type === "rename") {
+      const name = draftName.trim();
+      if (!name) return;
+      writeProjects(projects.map((item) => item.id === dialog.project.id ? { ...item, name, updatedAt: Date.now() } : item));
+    } else writeProjects(projects.filter((item) => item.id !== dialog.project.id));
+    refresh();
+    closeDialog();
+  };
+  return <main className="project-home">
+    <header className="home-header"><div className="brand-mark"><span className="brand-glyph"><Square size={18} /></span><div><strong>archboard</strong><small>systems, clearly</small></div></div><button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button></header>
+    <section className="home-content"><div className="home-intro"><div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p></div><span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></div>
+      <div className="project-grid">{projects.map((project) => <article className="project-card" key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}><button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button><div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodes.length} elements · Edited {new Date(project.updatedAt).toLocaleDateString()}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div></article>)}</div>
+    </section>
+    {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialog.type === "rename" ? "Project name" : "Delete project"}</span><h2>{dialog.type === "rename" ? "Rename project" : `Delete “${dialog.project.name}”?`}</h2>{dialog.type === "rename" ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>This project and its local diagram data will be removed.</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialog.type === "delete" ? "danger" : "primary"} onClick={submitDialog}>{dialog.type === "rename" ? "Save name" : "Delete project"}</button></div></div></div>}
+  </main>;
+}
+function Editor({ project }: { project: Project }) {
   const state = useDiagram(),
     {
-      nodes: storeNodes,
-      edges: storeEdges,
       snapshot,
       undo,
       redo,
       setDiagram,
     } = state;
-  const [nodes, setNodes, onNodesChange] = useNodesState(storeNodes),
-    [edges, setEdges, onEdgesChange] = useEdgesState(storeEdges);
-  const [selectedId, setSelectedId] = useState("api"),
+  const [nodes, setNodes, onNodesChange] = useNodesState(project.nodes),
+    [edges, setEdges, onEdgesChange] = useEdgesState(project.edges);
+  const [selectedId, setSelectedId] = useState(project.nodes[0]?.id ?? ""),
+    [editingName, setEditingName] = useState(false),
+    [nameDraft, setNameDraft] = useState(project.name),
     [tab, setTab] = useState<"text" | "appearance" | "themes" | "connector">(
       "appearance",
     ),
@@ -544,6 +641,14 @@ function Editor() {
   const layerHost = useRef<HTMLDivElement | null>(null);
   const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
   const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
+  const saveProjectName = () => {
+    const name = nameDraft.trim();
+    if (name) {
+      writeProjects(readProjects().map((item) => item.id === project.id ? { ...item, name, updatedAt: Date.now() } : item));
+      setNameDraft(name);
+    } else setNameDraft(project.name);
+    setEditingName(false);
+  };
   const selectLayer = (id: string) => { setSelectedId(id); setNodes((items) => items.map((item) => ({ ...item, selected: item.id === id }))); };
   useEffect(() => {
     const host = document.createElement("div");
@@ -624,8 +729,10 @@ function Editor() {
   }, [nodes, reactFlow, setNodes, snapshot]);
   useEffect(() => {
     setDiagram(nodes, edges);
+    const projects = readProjects();
+    writeProjects(projects.map((item) => item.id === project.id ? { ...item, nodes, edges, updatedAt: Date.now() } : item));
     localStorage.setItem("archboard-diagram", JSON.stringify({ nodes, edges }));
-  }, [nodes, edges, setDiagram]);
+  }, [nodes, edges, project.id, setDiagram]);
   const deleteSelected = () => {
     const selectedNodes = nodes
         .filter((n) => n.selected || n.id === selectedId)
@@ -952,7 +1059,7 @@ function Editor() {
     if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
-  useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 20, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, oldFlex = element.style.flex, oldOverflow = element.style.overflow, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; element.style.flex = "0 0 auto"; element.style.overflow = "visible"; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => { toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px`, flex: "0 0 auto", overflow: "visible" } }).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; element.style.flex = oldFlex; element.style.overflow = oldOverflow; reactFlow.setViewport(viewport); }); }); }, [exportOpen, exportTransparent, nodes, edges]);
+  useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 20, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, oldFlex = element.style.flex, oldOverflow = element.style.overflow, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; element.style.flex = "0 0 auto"; element.style.overflow = "visible"; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => requestAnimationFrame(() => { toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px`, flex: "0 0 auto", overflow: "visible" } }).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; element.style.flex = oldFlex; element.style.overflow = oldOverflow; reactFlow.setViewport(viewport); }); })); }, [exportOpen, exportTransparent, nodes, edges]);
   const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat) => {
     if (format === "json") { exportJson(); setExportOpen(false); return; }
     if (!canvas.current) return;
@@ -966,7 +1073,7 @@ function Editor() {
     canvas.current.style.flex = "0 0 auto";
     canvas.current.style.overflow = "visible";
     reactFlow.setViewport({ x: padding - minX, y: padding - minY, zoom: 1 });
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     const backgroundColor = exportTransparent ? undefined : "#f8fafc";
     try {
       const exportStyle = { width: `${exportWidth}px`, height: `${exportHeight}px`, flex: "0 0 auto", overflow: "visible" };
@@ -1017,19 +1124,12 @@ function Editor() {
           </div>
         </div>
         <div className="document-title">
-          <span className="live-dot" /> Untitled architecture{" "}
+          <span className="live-dot" /> {editingName ? <input className="document-title-input" autoFocus value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={saveProjectName} onKeyDown={(event) => { if (event.key === "Enter") saveProjectName(); if (event.key === "Escape") { setNameDraft(project.name); setEditingName(false); } }} /> : <button className="document-name" onClick={() => setEditingName(true)} title="Rename project">{nameDraft}</button>}{" "}
           <span className="saved">Saved locally</span>
         </div>
         <div className="top-actions">
-          <button
-            onClick={() => {
-              setNodes([]);
-              setEdges([]);
-            }}
-            title="New diagram"
-          >
-            <Plus size={16} />
-            New
+          <button className="icon-button" onClick={() => navigate("/")} title="Home">
+            <Home size={17} />
           </button>
           <label className="icon-button" title="Import JSON">
             <Upload size={17} />
@@ -1042,8 +1142,9 @@ function Editor() {
               }
             />
           </label>
-          <button className="icon-button" onClick={downloadSkill} title="Download Archboard skill">
+          <button className="skill-button" onClick={downloadSkill} title="Download SKILL">
             <FileJson size={16} />
+            Download SKILL
           </button>
           <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
@@ -1101,36 +1202,13 @@ function Editor() {
           <div className="panel-resizer right-edge" onPointerDown={(event) => startPanelResize("left", event)} />
         </aside>
         <section className="canvas-shell">
-          <div className="canvas-toolbar">
-            <div className="toolbar-group">
-              <button onClick={() => reactFlow.zoomOut()}>
-                <span>−</span>
-              </button>
-              <span className="zoom-value">
-                {Math.round(reactFlow.getZoom() * 100)}%
-              </span>
-              <button onClick={() => reactFlow.zoomIn()}>
-                <span>+</span>
-              </button>
-              <button onClick={() => reactFlow.fitView({ padding: 0.18 })}>
-                Fit
-              </button>
-            </div>
-            <div className="toolbar-group">
-              <button onClick={undoDiagram} disabled={!state.past.length}>
-                <Undo2 size={15} />
-              </button>
-              <button onClick={redoDiagram} disabled={!state.future.length}>
-                <Redo2 size={15} />
-              </button>
-            </div>
-          </div>
           <div className="canvas-stage" ref={canvas}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
+              onlyRenderVisibleElements={false}
               onNodesChange={(changes) => {
                 if (
                   changes.some(
@@ -1172,6 +1250,14 @@ function Editor() {
               />
               <Controls showInteractive={false} />
             </ReactFlow>
+            <div className="canvas-history">
+              <button onClick={undoDiagram} disabled={!state.past.length} title="Undo">
+                <Undo2 size={15} />
+              </button>
+              <button onClick={redoDiagram} disabled={!state.future.length} title="Redo">
+                <Redo2 size={15} />
+              </button>
+            </div>
           </div>
         </section>
         <aside className="right-panel" style={{ width: rightWidth, flexBasis: rightWidth }}>
@@ -1286,6 +1372,85 @@ function Field({
     </label>
   );
 }
+function hexToHsv(value: string) {
+  const hex = value.replace("#", "").padEnd(6, "0");
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+  let h = 0;
+  if (delta) h = max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  return { h: (h * 60 + 360) % 360, s: max ? (delta / max) * 100 : 0, v: max * 100 };
+}
+function hsvToHex(h: number, s: number, v: number) {
+  const c = (v / 100) * (s / 100), x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v / 100 - c;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return `#${[r, g, b].map((channel) => Math.round((channel + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+function rgba(hex: string, opacity = 100) {
+  const clean = hex.replace("#", "").padEnd(6, "0");
+  return `rgba(${parseInt(clean.slice(0, 2), 16)}, ${parseInt(clean.slice(2, 4), 16)}, ${parseInt(clean.slice(4, 6), 16)}, ${Math.max(0, Math.min(100, opacity)) / 100})`;
+}
+function ColorPicker({ value, opacity = 100, onChange }: { value: string; opacity?: number; onChange: (color: string, opacity: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState({ left: 12, top: 12 });
+  const [hsv, setHsv] = useState(() => hexToHsv(value));
+  const [alpha, setAlpha] = useState(opacity);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => { setHsv(hexToHsv(value)); setAlpha(opacity); }, [value, opacity]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as unknown as globalThis.Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const update = (next: Partial<typeof hsv>, nextAlpha = alpha) => {
+    const nextHsv = { ...hsv, ...next };
+    setHsv(nextHsv);
+    setAlpha(nextAlpha);
+    onChange(hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v), nextAlpha);
+  };
+  const setFromPointer = (event: React.PointerEvent<HTMLDivElement>, mode: "sv" | "hue" | "alpha") => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    if (mode === "sv") update({ s: ratio * 100, v: 100 - Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) * 100 });
+    else if (mode === "hue") update({ h: ratio * 360 });
+    else update({}, ratio * 100);
+  };
+  const togglePicker = () => {
+    if (!open && root.current) {
+      const rect = root.current.getBoundingClientRect();
+      const width = 264;
+      const height = 330;
+      setPopoverPosition({
+        left: Math.max(12, Math.min(window.innerWidth - width - 12, rect.right - width)),
+        top: rect.bottom + 8 + height > window.innerHeight ? Math.max(12, rect.top - height - 8) : rect.bottom + 8,
+      });
+    }
+    setOpen(!open);
+  };
+  return <div className="color-picker" ref={root}>
+    <button className="color-swatch" type="button" aria-label="Open color picker" onClick={togglePicker}>
+      <span style={{ background: rgba(value, opacity) }} />
+    </button>
+    {open && <div className="color-popover" style={{ left: popoverPosition.left, top: popoverPosition.top }}>
+      <div className="color-surface" style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))` }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setFromPointer(event, "sv"); }} onPointerMove={(event) => { if (event.buttons) setFromPointer(event, "sv"); }}>
+        <span className="color-picker-handle" style={{ left: `${hsv.s}%`, top: `${100 - hsv.v}%` }} />
+      </div>
+      <div className="color-control-row">
+        <Pipette size={16} />
+        <div className="color-hue" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setFromPointer(event, "hue"); }} onPointerMove={(event) => { if (event.buttons) setFromPointer(event, "hue"); }}><span className="color-picker-handle" style={{ left: `${hsv.h / 3.6}%` }} /></div>
+      </div>
+      <div className="color-alpha" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setFromPointer(event, "alpha"); }} onPointerMove={(event) => { if (event.buttons) setFromPointer(event, "alpha"); }}><span style={{ background: rgba(hsvToHex(hsv.h, hsv.s, hsv.v), alpha) }} /><i className="color-picker-handle" style={{ left: `${alpha}%` }} /></div>
+      <div className="color-value-row">
+        <select aria-label="Color format" defaultValue="hex"><option value="hex">Hex</option></select>
+        <input aria-label="Hex color" value={hsvToHex(hsv.h, hsv.s, hsv.v)} onChange={(event) => { const next = event.target.value.startsWith("#") ? event.target.value : `#${event.target.value}`; if (/^#[0-9a-f]{6}$/i.test(next)) { setHsv(hexToHsv(next)); onChange(next.toUpperCase(), alpha); } }} />
+        <input aria-label="Opacity" type="number" min="0" max="100" value={Math.round(alpha)} onChange={(event) => update({}, Math.max(0, Math.min(100, +event.target.value)))} />
+        <span>%</span>
+      </div>
+    </div>}
+  </div>;
+}
 type NodeUpdate = (
   p: Partial<NodeData> & { style?: React.CSSProperties },
 ) => void;
@@ -1361,24 +1526,38 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
           </select>
         </Field>
       </div>
+      <div className="section-label">Alignment</div>
       <div className="align-row">
         <button
           className={data.align === "left" ? "active" : ""}
           onClick={() => update({ align: "left" })}
+          title="Align left"
         >
           <AlignLeft size={16} />
         </button>
         <button
           className={data.align === "center" ? "active" : ""}
           onClick={() => update({ align: "center" })}
+          title="Align center"
         >
           <AlignCenter size={16} />
         </button>
         <button
           className={data.align === "right" ? "active" : ""}
           onClick={() => update({ align: "right" })}
+          title="Align right"
         >
           <AlignRight size={16} />
+        </button>
+        <span className="align-divider" />
+        <button className={data.vertical === "top" ? "active" : ""} onClick={() => update({ vertical: "top" })} title="Align top">
+          <AlignVerticalJustifyStart size={16} />
+        </button>
+        <button className={data.vertical === "center" ? "active" : ""} onClick={() => update({ vertical: "center" })} title="Align middle">
+          <AlignVerticalJustifyCenter size={16} />
+        </button>
+        <button className={data.vertical === "bottom" ? "active" : ""} onClick={() => update({ vertical: "bottom" })} title="Align bottom">
+          <AlignVerticalJustifyEnd size={16} />
         </button>
       </div>
     </div>
@@ -1397,25 +1576,13 @@ function AppearancePanel({
     <div className="inspector-content">
       <div className="color-row">
         <Field label="Fill">
-          <input
-            type="color"
-            value={data.fill}
-            onChange={(e) => update({ fill: e.target.value })}
-          />
+          <ColorPicker value={data.fill} opacity={data.fillOpacity} onChange={(color, opacity) => update({ fill: color, fillOpacity: opacity })} />
         </Field>
         <Field label="Border">
-          <input
-            type="color"
-            value={data.border}
-            onChange={(e) => update({ border: e.target.value })}
-          />
+          <ColorPicker value={data.border} opacity={data.borderOpacity} onChange={(color, opacity) => update({ border: color, borderOpacity: opacity })} />
         </Field>
         <Field label="Text">
-          <input
-            type="color"
-            value={data.textColor}
-            onChange={(e) => update({ textColor: e.target.value })}
-          />
+          <ColorPicker value={data.textColor} opacity={data.textOpacity} onChange={(color, opacity) => update({ textColor: color, textOpacity: opacity })} />
         </Field>
       </div>
       <div className="two-col">
@@ -1467,6 +1634,26 @@ function AppearancePanel({
             <option>dashed</option>
           </select>
         </Field>
+        {data.kind === "container" && data.borderStyle === "dashed" && (
+          <>
+            <Field label="Dash length">
+              <input
+                type="number"
+                min="1"
+                value={data.dashLength ?? 8}
+                onChange={(e) => update({ dashLength: Math.max(1, +e.target.value) })}
+              />
+            </Field>
+            <Field label="Dash gap">
+              <input
+                type="number"
+                min="1"
+                value={data.dashGap ?? 5}
+                onChange={(e) => update({ dashGap: Math.max(1, +e.target.value) })}
+              />
+            </Field>
+          </>
+        )}
         <Field label="Radius">
           <input
             type="number"
@@ -1498,22 +1685,28 @@ function AppearancePanel({
           <label className="frame-toggle"><input type="checkbox" checked={data.clipContent ?? false} onChange={(e) => update({ clipContent: e.target.checked })} /> Clip content to frame</label>
         </>
       )}
-      {data.kind !== "container" && <><div className="section-label">Alignment</div><div className="segmented"><button className={data.align === "left" ? "active" : ""} onClick={() => update({ align: "left" })}><AlignLeft size={14} /></button><button className={data.align === "center" ? "active" : ""} onClick={() => update({ align: "center" })}><AlignCenter size={14} /></button><button className={data.align === "right" ? "active" : ""} onClick={() => update({ align: "right" })}><AlignRight size={14} /></button></div></>}
-      <div className="section-label">{data.kind === "container" ? "Frame alignment" : "Vertical alignment"}</div>
-      <div className="align-row">
-        <button onClick={() => update({ vertical: "top" })}>
-          <ArrowUp size={15} />
-        </button>
-        <button
-          className={data.vertical === "center" ? "active" : ""}
-          onClick={() => update({ vertical: "center" })}
-        >
-          <ArrowDown size={15} />
-        </button>
-        <button onClick={() => update({ vertical: "bottom" })}>
-          <ArrowDown size={15} />
-        </button>
-      </div>
+       <div className="section-label">Alignment</div>
+       <div className="align-row">
+         <button className={data.align === "left" ? "active" : ""} onClick={() => update({ align: "left" })} title="Align left">
+           <AlignLeft size={16} />
+         </button>
+         <button className={data.align === "center" ? "active" : ""} onClick={() => update({ align: "center" })} title="Align center">
+           <AlignCenter size={16} />
+         </button>
+         <button className={data.align === "right" ? "active" : ""} onClick={() => update({ align: "right" })} title="Align right">
+           <AlignRight size={16} />
+         </button>
+         <span className="align-divider" />
+         <button className={data.vertical === "top" ? "active" : ""} onClick={() => update({ vertical: "top" })} title="Align top">
+           <AlignVerticalJustifyStart size={16} />
+         </button>
+         <button className={data.vertical === "center" ? "active" : ""} onClick={() => update({ vertical: "center" })} title="Align middle">
+           <AlignVerticalJustifyCenter size={16} />
+         </button>
+         <button className={data.vertical === "bottom" ? "active" : ""} onClick={() => update({ vertical: "bottom" })} title="Align bottom">
+           <AlignVerticalJustifyEnd size={16} />
+         </button>
+       </div>
     </div>
   );
 }

@@ -85,6 +85,9 @@ button {
   color: #415762;
   font-size: 13px;
 }
+.document-name { padding: 3px 5px; color: #415762; border: 1px solid transparent; border-radius: 3px; font-size: 13px; }
+.document-name:hover { background: #f4f8f9; border-color: #d8e4e6; }
+.document-title-input { width: min(300px, 30vw); padding: 4px 6px; color: #314e58; background: #fff; border: 1px solid #7db8c2; border-radius: 3px; outline: none; font-size: 13px; }
 .live-dot {
   width: 7px;
   height: 7px;
@@ -124,6 +127,41 @@ button {
   font-weight: 700;
 }
 .top-actions .primary:hover { color: #fff; background: #006c88; border-color: #006c88; }
+.skill-button { white-space: nowrap; }
+.project-home { min-height: 100vh; overflow: auto; background: #f5f7f7; }
+.home-header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 42px; background: #fff; border-bottom: 1px solid #dce5e7; }
+.home-create { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; background: #176b7d; border: 1px solid #176b7d; border-radius: 3px; font-size: 12px; font-weight: 700; }
+.home-create:hover { background: #0f596a; }
+.home-content { max-width: 1180px; margin: 0 auto; padding: 54px 42px 70px; }
+.home-intro { display: flex; align-items: end; justify-content: space-between; margin-bottom: 28px; }
+.home-intro h1 { margin: 7px 0 8px; color: #17313d; font-size: 32px; letter-spacing: -1.3px; }
+.home-intro p { margin: 0; color: #71878e; font-size: 13px; }
+.project-count { color: #81959b; font: 11px "DM Mono"; text-transform: uppercase; letter-spacing: .5px; }
+.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 18px; }
+.project-card { overflow: hidden; background: #fff; border: 1px solid #dce5e7; border-radius: 5px; box-shadow: 0 5px 18px rgb(27 62 72 / 4%); transition: transform .15s, border-color .15s, box-shadow .15s; }
+.project-card:hover { transform: translateY(-2px); border-color: #9ec8cf; box-shadow: 0 10px 24px rgb(27 62 72 / 10%); }
+.project-preview { display: block; width: 100%; height: 162px; padding: 20px; background-color: #fbfdfd; background-image: radial-gradient(#d6e6e8 .8px, transparent .8px); background-size: 13px 13px; border-bottom: 1px solid #e2ebed; }
+.preview-frame { position: relative; display: block; width: 100%; height: 100%; padding: 18px 14px; border: 1px solid #8cbac1; border-radius: 5px; background: rgb(232 247 248 / 70%); }
+.preview-frame span { display: block; width: 62%; height: 16px; margin-bottom: 10px; border: 1px solid #b6d9dc; border-radius: 2px; background: #fff; }
+.preview-frame span:nth-child(2) { width: 78%; }
+.preview-frame span:nth-child(3) { width: 42%; }
+.project-card-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 15px 16px; }
+.project-card h2 { overflow: hidden; max-width: 175px; margin: 0 0 5px; color: #244552; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.project-card p { margin: 0; color: #8b9ba0; font: 10px "DM Mono"; }
+.project-actions { display: flex; align-items: center; gap: 2px; }
+.project-actions button { display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; color: #688089; border: 1px solid transparent; border-radius: 3px; font-size: 10px; }
+.project-actions button:hover { color: #176b7d; background: #edf7f8; border-color: #b9dce1; }
+.project-actions button:last-child:hover { color: #b34d4d; background: #fff2f2; border-color: #edc5c5; }
+.project-dialog-backdrop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; background: rgb(18 39 46 / 36%); }
+.project-dialog { width: min(390px, 100%); padding: 24px; background: #fff; border: 1px solid #d7e3e5; border-radius: 6px; box-shadow: 0 20px 60px rgb(15 48 58 / 22%); }
+.project-dialog h2 { margin: 7px 0 8px; color: #1d3f4c; font-size: 20px; letter-spacing: -.5px; }
+.project-dialog p { margin: 0 0 18px; color: #71878e; font-size: 12px; line-height: 1.5; }
+.project-dialog input { width: 100%; margin: 6px 0 20px; padding: 10px 11px; color: #314e58; background: #fbfdfd; border: 1px solid #a8cdd2; border-radius: 3px; outline: none; font-size: 13px; }
+.project-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.project-dialog-actions button { padding: 9px 13px; color: #64777f; border: 1px solid #d2e0e2; border-radius: 3px; font-size: 11px; }
+.project-dialog-actions button:hover { background: #f5f9f9; }
+.project-dialog-actions .primary { color: #fff; background: #00546d; border-color: #00546d; }
+.project-dialog-actions .danger { color: #fff; background: #b34d4d; border-color: #b34d4d; }
 .workspace {
   display: flex;
   flex: 1;
@@ -390,12 +428,6 @@ h2 {
   line-height: 1.35;
   transition: box-shadow 0.12s;
 }
-.diagram-node.container {
-  align-items: flex-start;
-  justify-content: flex-start;
-  text-align: left;
-  padding-top: 13px;
-}
 .diagram-node.diamond {
   transform: rotate(45deg);
 }
@@ -414,10 +446,6 @@ h2 {
   width: 100%;
   outline: none;
   overflow-wrap: anywhere;
-}
-.diagram-node.container .node-copy {
-  width: auto;
-  white-space: nowrap;
 }
 .react-flow__handle {
   width: 8px;
@@ -479,8 +507,11 @@ h2 {
   display: grid;
   gap: 14px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
   padding-bottom: 10px;
 }
+.inspector-content::-webkit-scrollbar { display: none; }
 .field {
   display: grid;
   gap: 6px;
@@ -513,6 +544,24 @@ h2 {
   padding: 2px;
   height: 32px;
 }
+.color-picker { position: relative; }
+.color-swatch { width: 100%; height: 32px; padding: 3px; border: 1px solid #d5e1e3; border-radius: 3px; background: #fbfdfd; cursor: pointer; }
+.color-swatch span { display: block; width: 100%; height: 100%; border-radius: 2px; }
+.color-popover { position: fixed; z-index: 1000; width: 264px; padding: 12px; color: #e7e7e7; background: #292929; border: 1px solid #454545; border-radius: 7px; box-shadow: 0 16px 34px rgb(0 0 0 / 28%); }
+.color-surface { position: relative; height: 188px; overflow: hidden; border-radius: 5px; cursor: crosshair; }
+.color-control-row { display: flex; align-items: center; gap: 10px; margin: 12px 5px 10px; }
+.color-control-row svg { flex: 0 0 auto; color: #e7e7e7; }
+.color-hue { position: relative; height: 18px; flex: 1; border-radius: 10px; background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%); cursor: ew-resize; }
+.color-alpha { position: relative; height: 18px; margin: 0 5px 13px; overflow: hidden; border-radius: 10px; background-color: #4a4a4a; background-image: linear-gradient(45deg, #555 25%, transparent 25%), linear-gradient(-45deg, #555 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #555 75%), linear-gradient(-45deg, transparent 75%, #555 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0px; cursor: ew-resize; }
+.color-alpha > span { position: absolute; inset: 0; }
+.color-picker-handle { position: absolute; z-index: 1; width: 14px; height: 14px; transform: translate(-50%, -50%); border: 3px solid #fff; border-radius: 50%; box-shadow: 0 1px 3px rgb(0 0 0 / 65%); pointer-events: none; }
+.color-surface .color-picker-handle { top: 0; }
+.color-hue .color-picker-handle,
+.color-alpha .color-picker-handle { top: 50%; }
+.color-value-row { display: grid; grid-template-columns: 68px 1fr 54px 12px; gap: 5px; align-items: center; }
+.color-value-row select,
+.color-value-row input { min-width: 0; height: 30px; padding: 0 8px; color: #f0f0f0; background: #3a3a3a; border: 1px solid #4a4a4a; border-radius: 4px; outline: none; font: 11px "DM Mono"; }
+.color-value-row span { color: #a7a7a7; font-size: 11px; }
 .field input[type="range"] {
   accent-color: #27798b;
   padding: 0;
@@ -553,7 +602,10 @@ h2 {
 .align-row {
   display: flex;
   gap: 5px;
+  align-items: center;
 }
+.align-divider { width: 1px; height: 22px; background: #d5e1e3; margin: 0 2px; }
+.container-border { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .align-row button {
   display: grid;
   place-items: center;
