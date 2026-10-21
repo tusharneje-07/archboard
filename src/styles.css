@@ -38,6 +38,43 @@ button {
   flex-direction: column;
   background: #f5f7f7;
 }
+.presentation-shell { width: 100vw; height: 100vh; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: #f7fafb; }
+.presentation-toolbar { position: relative; z-index: 30; display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 0 20px; color: #dcecef; background: #17313d; box-shadow: 0 3px 16px rgb(20 48 58 / 20%); }
+.presentation-brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.presentation-brand strong { overflow: hidden; max-width: 34vw; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.presentation-brand span { color: #8fb4bc; font: 10px "DM Mono"; text-transform: uppercase; letter-spacing: 1px; }
+.presentation-tools { display: flex; align-items: center; gap: 5px; }
+.presentation-tools button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; color: #a8c4c9; border: 1px solid transparent; border-radius: 3px; font-size: 11px; }
+.presentation-tools button:hover, .presentation-tools button.active { color: #fff; background: #2b5965; border-color: #4f7d86; }
+.presentation-tools button:last-child { margin-left: 5px; color: #ffd2d2; }
+.presentation-thickness { display: inline-flex; align-items: center; gap: 6px; margin-left: 5px; color: #a8c4c9; font-size: 10px; }
+.presentation-color { display: inline-flex; align-items: center; gap: 6px; margin-left: 5px; color: #a8c4c9; font-size: 10px; }
+.presentation-color input { width: 25px; height: 22px; padding: 2px; border: 1px solid #4f7d86; border-radius: 3px; background: #244b57; }
+.presentation-color input:disabled { opacity: .4; }
+.presentation-thickness input { width: 80px; accent-color: #8fc4cc; }
+.presentation-thickness b { min-width: 25px; color: #dcecef; font: 10px "DM Mono"; font-weight: 400; }
+.presentation-thickness small { color: #8fb4bc; font: 10px "DM Mono"; }
+.presentation-collapse { padding: 6px !important; margin-left: 4px; color: #a8c4c9 !important; }
+.presentation-toolbar.collapsed { min-height: 0; height: 0; padding: 0; border: 0; box-shadow: none; }
+.presentation-toolbar.collapsed .presentation-brand,
+.presentation-toolbar.collapsed .presentation-tools > :not(.presentation-collapse) { display: none; }
+.presentation-toolbar.collapsed .presentation-tools { position: absolute; top: 0; right: 12px; }
+.presentation-toolbar.collapsed .presentation-collapse { min-height: 26px; color: #dcecef !important; background: #17313d; border-radius: 0 0 4px 4px; }
+.laser-tool-dot { width: 9px; height: 9px; border-radius: 50%; background: #f04d52; box-shadow: 0 0 0 3px rgb(240 77 82 / 20%); }
+.presentation-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.presentation-flow { width: 100%; height: 100%; }
+.presentation-flow .node-copy { pointer-events: none; }
+.presentation-flow .react-flow__handle { display: none; }
+.presentation-flow .react-flow__edges { z-index: 3; }
+.presentation-flow .react-flow__nodes { z-index: 2; }
+.presentation-flow .react-flow__minimap { right: 18px; bottom: 18px; }
+.presentation-ink { position: absolute; inset: 0; z-index: 20; width: 100%; height: 100%; pointer-events: none; }
+.presentation-ink.drawing { pointer-events: auto; cursor: crosshair; }
+.presentation-ink.laser-active { pointer-events: auto; cursor: default; }
+.presentation-ink.space-held { pointer-events: none; cursor: grab; }
+.presentation-laser-trail { position: absolute; inset: 0; z-index: 19; width: 100%; height: 100%; opacity: 1; pointer-events: none; transition: opacity .3s ease-out; }
+.presentation-laser { position: fixed; z-index: 1000; opacity: 0; pointer-events: none; border: 2px solid #fff; border-radius: 50%; background: #ee3d45; box-shadow: 0 0 0 3px rgb(238 61 69 / 28%), 0 0 20px 6px rgb(238 61 69 / 70%); transition: opacity .1s, width .12s, height .12s; }
+.presentation-missing { display: grid; place-items: center; width: 100vw; height: 100vh; color: #60777e; font: 14px Manrope, sans-serif; }
 .topbar {
   height: 66px;
   flex: 0 0 66px;
@@ -182,7 +219,15 @@ button {
 .right-panel {
   border-left: 1px solid #dce5e7;
   padding: 23px 17px 15px;
+  min-width: 0;
+  overflow: hidden;
 }
+.right-panel > *,
+.inspector-content,
+.inspector-content > *,
+.field,
+.two-col,
+.color-row { min-width: 0; }
 .panel-heading {
   display: flex;
   justify-content: space-between;
@@ -441,6 +486,43 @@ h2 {
 .image-media { position: relative; overflow: hidden; min-width: 0; min-height: 0; }
 .image-media img { display: block; width: 100%; height: 100%; user-select: none; }
 .image-node .node-copy { overflow: auto; }
+.image-source-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px; min-width: 0; }
+.image-source-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 32px; overflow: hidden; padding: 7px 6px; color: #17677a; background: #edf7f8; border: 1px solid #b9dce1; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 700; line-height: 1.2; text-align: center; }
+.image-source-button:hover { background: #dff1f3; }
+.image-source-preview { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px; background: #f7fafb; border: 1px solid #dce7e8; border-radius: 3px; }
+.image-source-preview img { width: 30px; height: 30px; flex: 0 0 30px; object-fit: contain; border-radius: 2px; background: #fff; }
+.image-source-preview span { overflow: hidden; flex: 1; color: #60777e; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.image-source-preview button { color: #b05f5f; font-size: 10px; }
+.image-source-error { margin: -7px 0 0; color: #b34d4d; font-size: 10px; }
+.icon-store-backdrop { position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 28px; background: rgb(18 39 46 / 38%); }
+.icon-store { display: flex; flex-direction: column; width: min(820px, 100%); max-height: min(720px, 90vh); overflow: hidden; background: #fff; border: 1px solid #d7e3e5; border-radius: 6px; box-shadow: 0 22px 70px rgb(15 48 58 / 24%); }
+.icon-store-head { display: flex; justify-content: space-between; gap: 20px; padding: 22px 24px 16px; border-bottom: 1px solid #e5edef; }
+.icon-store-head h2 { margin: 6px 0 5px; color: #1d3f4c; font-size: 20px; letter-spacing: -.5px; }
+.icon-store-head p { margin: 0; color: #81959b; font-size: 11px; }
+.icon-store-tools { display: grid; gap: 12px; padding: 14px 24px 10px; }
+.icon-store-tools > input { width: 100%; padding: 10px 11px; color: #314e58; background: #fbfdfd; border: 1px solid #c4d9dc; border-radius: 3px; outline: none; font-size: 12px; }
+.icon-store-tools > input:focus { border-color: #64aabd; box-shadow: 0 0 0 2px #e5f4f6; }
+.icon-category-list { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
+.icon-category-list::-webkit-scrollbar { display: none; }
+.icon-category-list button { flex: 0 0 auto; padding: 6px 8px; color: #72878d; border: 1px solid #d5e1e3; border-radius: 3px; font-size: 10px; }
+.icon-category-list button:hover, .icon-category-list button.active { color: #17677a; background: #edf7f8; border-color: #a7d1d7; }
+.icon-store-meta { display: flex; justify-content: space-between; padding: 0 24px 10px; color: #91a0a4; font: 10px "DM Mono"; }
+.icon-store-status { margin: 0 24px 10px; padding: 8px 10px; color: #17677a; background: #edf7f8; border: 1px solid #c4e1e4; border-radius: 3px; font-size: 10px; }
+.icon-store-status.error { color: #9d5555; background: #fff4f4; border-color: #edc5c5; }
+.icon-store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; overflow-y: auto; padding: 0 24px 18px; }
+.icon-store-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; padding: 10px; text-align: left; border: 1px solid #e0eaec; border-radius: 4px; }
+.icon-store-card:hover, .icon-store-card.selected { background: #f1f9fa; border-color: #72b7c2; box-shadow: 0 0 0 1px #b9dce1; }
+.icon-store-preview { display: grid; place-items: center; width: 100%; height: 58px; background: #fbfdfd; border: 1px solid #edf2f3; border-radius: 3px; }
+.icon-store-preview img { width: 38px; height: 38px; object-fit: contain; }
+.icon-store-loading { width: 22px; height: 22px; border: 2px solid #d8e7e9; border-top-color: #2d8798; border-radius: 50%; animation: icon-store-spin .7s linear infinite; }
+@keyframes icon-store-spin { to { transform: rotate(360deg); } }
+.icon-store-preview b { color: #17677a; font: 700 14px "DM Mono"; }
+.icon-store-card strong { overflow: hidden; width: 100%; color: #35545e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.icon-store-card small { overflow: hidden; width: 100%; color: #91a0a4; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.icon-store-empty { display: grid; place-items: center; gap: 8px; min-height: 230px; color: #91a0a4; }
+.icon-store-empty strong { color: #526d76; font-size: 13px; }
+.icon-store-empty span { font-size: 11px; }
+.icon-store-more { align-self: center; margin: 0 0 18px; padding: 8px 14px; color: #17677a; background: #edf7f8; border: 1px solid #b9dce1; border-radius: 3px; font-size: 10px; font-weight: 700; }
 .diagram-node.is-selected {
   box-shadow:
     0 0 0 2px #1c8da5,

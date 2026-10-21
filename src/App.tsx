@@ -35,22 +35,27 @@ import {
   AlignVerticalJustifyStart,
   Box,
   ChevronDown,
+  ChevronUp,
   Circle,
   Copy,
   Download,
+  Eraser,
   FileJson,
   Grid3X3,
   Group,
   Hand,
+  Highlighter,
   Hexagon,
   Home,
   Image as ImageIcon,
   Link2,
   MousePointer2,
   PanelRight,
+  PenLine,
   Pentagon,
   Pipette,
   Plus,
+  Presentation as PresentationIcon,
   Redo2,
   Square,
   Trash2,
@@ -101,6 +106,10 @@ type NodeData = {
   imageSize?: number;
   imageOpacity?: number;
   imageRadius?: number;
+  imageSource?: "url" | "upload" | "store";
+  imageAssetId?: string;
+  imageAssetSource?: "simple-icons" | "svg-logos" | "iconify";
+  imageAssetName?: string;
 };
 type EdgeData = {
   route: "straight" | "orthogonal" | "free";
@@ -589,6 +598,57 @@ const shapeOptions: [ShapeKind, string, typeof Square][] = [
   ["image", "Image", ImageIcon],
   ["container", "Frame", PanelRight],
 ];
+type IconCategory = "Programming Languages" | "Frameworks" | "Databases" | "Cloud Providers" | "Hosting" | "DevOps" | "Developer Tools" | "Networking" | "General Icons";
+type StoreIcon = { id: string; name: string; category: IconCategory; aliases: string[]; source: NonNullable<NodeData["imageAssetSource"]>; url: string };
+const iconCategories: IconCategory[] = ["All" as IconCategory, "Programming Languages", "Frameworks", "Databases", "Cloud Providers", "Hosting", "DevOps", "Developer Tools", "Networking", "General Icons"];
+const simpleIcon = (id: string, name: string, category: IconCategory, aliases: string[] = [], color?: string): StoreIcon => ({ id: `simple-icons:${id}`, name, category, aliases, source: "simple-icons", url: `https://cdn.simpleicons.org/${id}${color ? `/${color}` : ""}` });
+const iconManifest: StoreIcon[] = [
+  simpleIcon("python", "Python", "Programming Languages", ["py"]),
+  simpleIcon("javascript", "JavaScript", "Programming Languages", ["js", "ecmascript"]),
+  simpleIcon("typescript", "TypeScript", "Programming Languages", ["ts"]),
+  simpleIcon("go", "Go", "Programming Languages", ["golang"]),
+  simpleIcon("rust", "Rust", "Programming Languages"),
+  simpleIcon("react", "React", "Frameworks", ["reactjs"]),
+  simpleIcon("vite", "Vite", "Developer Tools", ["bundler"]),
+  simpleIcon("nextdotjs", "Next.js", "Frameworks", ["next", "nextjs"]),
+  simpleIcon("django", "Django", "Frameworks", ["python web"]),
+  { id: "iconify:tabler:pillow", name: "Pillow", category: "Developer Tools", aliases: ["python imaging", "pil"], source: "iconify", url: "https://api.iconify.design/tabler/pillow.svg?height=64" },
+  simpleIcon("postgresql", "PostgreSQL", "Databases", ["postgres", "sql"]),
+  simpleIcon("mysql", "MySQL", "Databases", ["sql"]),
+  simpleIcon("mongodb", "MongoDB", "Databases", ["mongo", "nosql"]),
+  simpleIcon("redis", "Redis", "Databases", ["cache"]),
+  simpleIcon("sqlite", "SQLite", "Databases", ["sql"]),
+  { id: "iconify:logos:aws", name: "AWS", category: "Cloud Providers", aliases: ["amazon", "amazon web services", "cloud"], source: "iconify", url: "https://api.iconify.design/logos/aws.svg?height=64" },
+  simpleIcon("googlecloud", "Google Cloud", "Cloud Providers", ["gcp", "cloud"]),
+  simpleIcon("microsoftazure", "Microsoft Azure", "Cloud Providers", ["azure", "cloud"]),
+  simpleIcon("render", "Render", "Hosting", ["hosting", "cloud"]),
+  simpleIcon("vercel", "Vercel", "Hosting", ["deployment"]),
+  simpleIcon("netlify", "Netlify", "Hosting", ["deployment"]),
+  simpleIcon("docker", "Docker", "DevOps", ["container"]),
+  simpleIcon("kubernetes", "Kubernetes", "DevOps", ["k8s", "container orchestration"]),
+  simpleIcon("githubactions", "GitHub Actions", "DevOps", ["ci", "cd", "automation"]),
+  simpleIcon("gitlab", "GitLab", "DevOps", ["git", "ci"]),
+  simpleIcon("npm", "npm", "Developer Tools", ["node package manager"]),
+  simpleIcon("git", "Git", "Developer Tools", ["version control"]),
+  simpleIcon("graphql", "GraphQL", "Networking", ["api"]),
+  simpleIcon("nginx", "NGINX", "Networking", ["proxy", "web server"]),
+  simpleIcon("apache", "Apache", "Networking", ["web server"]),
+  { id: "iconify:mdi-database", name: "Database", category: "General Icons", aliases: ["storage", "data"], source: "iconify", url: "https://api.iconify.design/mdi/database.svg?height=64" },
+  { id: "iconify:mdi-cloud", name: "Cloud", category: "General Icons", aliases: ["hosting", "server"], source: "iconify", url: "https://api.iconify.design/mdi/cloud.svg?height=64" },
+  { id: "svg-logos:server", name: "Server", category: "General Icons", aliases: ["backend", "infrastructure"], source: "svg-logos", url: "https://cdn.jsdelivr.net/gh/gilbarbara/logos/logos/server.svg" },
+];
+function inferIconCategory(identifier: string): IconCategory {
+  const value = identifier.toLowerCase();
+  if (/(python|javascript|typescript|golang|rust|ruby|php|java|kotlin|swift|csharp|cpp)/.test(value)) return "Programming Languages";
+  if (/(react|vue|angular|svelte|next|nuxt|django|rails|laravel|spring|flutter|tailwind)/.test(value)) return "Frameworks";
+  if (/(postgres|mysql|mongo|redis|sqlite|database|databricks|supabase|firebase)/.test(value)) return "Databases";
+  if (/(aws|amazon|azure|google-cloud|googlecloud|gcp|oracle-cloud|digitalocean)/.test(value)) return "Cloud Providers";
+  if (/(vercel|netlify|render|heroku|fly|cloudflare-pages)/.test(value)) return "Hosting";
+  if (/(docker|kubernetes|jenkins|terraform|ansible|gitlab|github-actions|circleci)/.test(value)) return "DevOps";
+  if (/(npm|yarn|vite|webpack|git|github|gitlab|storybook|eslint|prettier|pillow)/.test(value)) return "Developer Tools";
+  if (/(nginx|apache|graphql|grpc|mqtt|tcp|router|network)/.test(value)) return "Networking";
+  return "General Icons";
+}
 
 function App() {
   const [path, setPath] = useState(window.location.pathname);
@@ -599,6 +659,11 @@ function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const projectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1];
+  const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
+  if (presentationId) {
+    const project = projects.find((item) => item.id === presentationId);
+    return project ? <ReactFlowProvider><PresentationView project={project} /></ReactFlowProvider> : <div className="presentation-missing">Project not found.</div>;
+  }
   if (!projectId) return <HomeScreen projects={projects} refresh={() => setProjects(readProjects())} />;
   const project = projects.find((item) => item.id === projectId);
   if (!project) {
@@ -606,6 +671,211 @@ function App() {
     return null;
   }
   return <ReactFlowProvider><Editor key={project.id} project={project} /></ReactFlowProvider>;
+}
+type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
+function PresentationView({ project }: { project: Project }) {
+  const reactFlow = useReactFlow();
+  const [tool, setTool] = useState<PresentationTool>("laser");
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [inkSize, setInkSize] = useState(4);
+  const [pencilColor, setPencilColor] = useState("#1f2528");
+  const [highlighterColor, setHighlighterColor] = useState("#ffd700");
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
+  const laserMarkerSize = Math.max(12, inkSize * 3);
+  const drawing = useRef<HTMLCanvasElement>(null);
+  const laserTrail = useRef<HTMLCanvasElement>(null);
+  const laser = useRef<HTMLDivElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  const lastPoint = useRef<{ x: number; y: number } | null>(null);
+  const pendingPoint = useRef<{ x: number; y: number } | null>(null);
+  const frame = useRef<number | null>(null);
+  const laserTimeout = useRef<number | null>(null);
+  const laserTrailTimeout = useRef<number | null>(null);
+  const laserWipeTimeout = useRef<number | null>(null);
+  const laserLastPoint = useRef<{ x: number; y: number } | null>(null);
+  const nodes = useMemo(() => {
+    const byId = new Map(project.nodes.map((node) => [node.id, node]));
+    const absolutePositions = new Map<string, { x: number; y: number }>();
+    const getAbsolutePosition = (node: Node<NodeData>, visiting = new Set<string>()): { x: number; y: number } => {
+      const cached = absolutePositions.get(node.id);
+      if (cached) return cached;
+      if (!node.parentId || visiting.has(node.id)) {
+        absolutePositions.set(node.id, node.position);
+        return node.position;
+      }
+      const parent = byId.get(node.parentId);
+      if (!parent) {
+        absolutePositions.set(node.id, node.position);
+        return node.position;
+      }
+      const parentPosition = getAbsolutePosition(parent, new Set(visiting).add(node.id));
+      const parentWidth = Number(parent.style?.width ?? parent.data.width ?? 330);
+      const parentHeight = Number(parent.style?.height ?? parent.data.height ?? 220);
+      const positionIsAlreadyAbsolute = node.position.x > parentWidth || node.position.y > parentHeight;
+      const position = positionIsAlreadyAbsolute
+        ? node.position
+        : { x: parentPosition.x + node.position.x, y: parentPosition.y + node.position.y };
+      absolutePositions.set(node.id, position);
+      return position;
+    };
+    return project.nodes.map((node) => ({
+      ...node,
+      parentId: undefined,
+      extent: undefined,
+      position: getAbsolutePosition(node),
+      draggable: false,
+      selectable: false,
+      connectable: false,
+      deletable: false,
+      focusable: false,
+    }));
+  }, [project.nodes]);
+  const edges = useMemo(() => {
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    return project.edges
+      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+      .map((edge) => ({ ...edge, selectable: false, deletable: false, focusable: false }));
+  }, [nodes, project.edges]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.code === "Space") setSpaceHeld(true); };
+    const onKeyUp = (event: KeyboardEvent) => { if (event.code === "Space") setSpaceHeld(false); };
+    const onBlur = () => setSpaceHeld(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("blur", onBlur); };
+  }, []);
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key.toLowerCase() === "l") setTool("laser");
+      else if (event.key.toLowerCase() === "p") setTool("pencil");
+      else if (event.key.toLowerCase() === "h") setTool("highlighter");
+      else if (event.key.toLowerCase() === "e") setTool("eraser");
+      else if (event.key === "[") setInkSize((size) => Math.max(1, size - 1));
+      else if (event.key === "]") setInkSize((size) => Math.min(16, size + 1));
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
+  useEffect(() => {
+    const canvas = drawing.current;
+    const trail = laserTrail.current;
+    const host = surface.current;
+    if (!canvas || !trail || !host) return;
+    const resize = () => {
+      const rect = host.getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      canvas.getContext("2d")?.scale(ratio, ratio);
+      trail.width = Math.max(1, Math.floor(rect.width * ratio));
+      trail.height = Math.max(1, Math.floor(rect.height * ratio));
+      trail.style.width = `${rect.width}px`;
+      trail.style.height = `${rect.height}px`;
+      trail.getContext("2d")?.scale(ratio, ratio);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  useEffect(() => {
+    const clearTrail = (animate = false) => {
+      const trail = laserTrail.current;
+      if (!trail) return;
+      if (!animate && laserWipeTimeout.current !== null) { window.clearTimeout(laserWipeTimeout.current); laserWipeTimeout.current = null; }
+      if (animate) {
+        trail.style.opacity = "0";
+        if (laserWipeTimeout.current !== null) window.clearTimeout(laserWipeTimeout.current);
+        laserWipeTimeout.current = window.setTimeout(() => {
+          const currentTrail = laserTrail.current;
+          const context = currentTrail?.getContext("2d");
+          if (context && currentTrail) { context.clearRect(0, 0, currentTrail.width, currentTrail.height); currentTrail.style.opacity = "1"; }
+          laserWipeTimeout.current = null;
+        }, 300);
+      } else {
+        trail.style.opacity = "1";
+        trail.getContext("2d")?.clearRect(0, 0, trail.width, trail.height);
+      }
+      laserLastPoint.current = null;
+    };
+    if (tool !== "laser" || spaceHeld) { if (laser.current) laser.current.style.opacity = "0"; if (laserTimeout.current !== null) window.clearTimeout(laserTimeout.current); if (laserTrailTimeout.current !== null) window.clearTimeout(laserTrailTimeout.current); clearTrail(); return; }
+    const move = (event: PointerEvent) => {
+      const rect = surface.current?.getBoundingClientRect();
+      if (!rect || event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) { if (laser.current) laser.current.style.opacity = "0"; return; }
+      const currentPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }, isDrawing = (event.buttons & 1) === 1;
+      if (isDrawing) {
+        const previousPoint = laserLastPoint.current, context = laserTrail.current?.getContext("2d");
+        if (previousPoint && context) { context.save(); context.strokeStyle = "rgba(239, 54, 62, .78)"; context.lineWidth = inkSize; context.lineCap = "round"; context.lineJoin = "round"; context.shadowColor = "rgba(239, 54, 62, .65)"; context.shadowBlur = inkSize * 2; context.beginPath(); context.moveTo(previousPoint.x, previousPoint.y); context.lineTo(currentPoint.x, currentPoint.y); context.stroke(); context.restore(); if (laserTrail.current) laserTrail.current.style.opacity = "1"; }
+        laserLastPoint.current = currentPoint;
+      } else laserLastPoint.current = null;
+      if (laser.current) { laser.current.style.left = `${event.clientX - laserMarkerSize / 2}px`; laser.current.style.top = `${event.clientY - laserMarkerSize / 2}px`; laser.current.style.opacity = "1"; }
+      if (laserTimeout.current !== null) window.clearTimeout(laserTimeout.current);
+      laserTimeout.current = window.setTimeout(() => { if (laser.current) laser.current.style.opacity = "0"; laserTimeout.current = null; }, 1000);
+      if (isDrawing) {
+        if (laserTrailTimeout.current !== null) window.clearTimeout(laserTrailTimeout.current);
+        laserTrailTimeout.current = window.setTimeout(() => { clearTrail(true); laserTrailTimeout.current = null; }, 1000);
+      }
+    };
+    window.addEventListener("pointermove", move);
+    return () => { window.removeEventListener("pointermove", move); if (laserTimeout.current !== null) window.clearTimeout(laserTimeout.current); if (laserTrailTimeout.current !== null) window.clearTimeout(laserTrailTimeout.current); if (laserWipeTimeout.current !== null) window.clearTimeout(laserWipeTimeout.current); clearTrail(); };
+  }, [inkSize, laserMarkerSize, spaceHeld, tool]);
+  const drawPending = () => {
+    frame.current = null;
+    const point = pendingPoint.current, previous = lastPoint.current, context = drawing.current?.getContext("2d");
+    if (!point || !previous || !context) return;
+    context.save();
+    context.strokeStyle = tool === "highlighter" ? `${highlighterColor}5c` : tool === "eraser" ? "rgba(0,0,0,1)" : pencilColor;
+    context.lineWidth = tool === "highlighter" ? inkSize * 4 : tool === "eraser" ? inkSize * 3 : inkSize;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
+    context.beginPath();
+    context.moveTo(previous.x, previous.y);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    context.restore();
+    lastPoint.current = point;
+    pendingPoint.current = null;
+  };
+  const pointFromEvent = (event: React.PointerEvent) => {
+    const rect = surface.current?.getBoundingClientRect();
+    return rect ? { x: event.clientX - rect.left, y: event.clientY - rect.top } : null;
+  };
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (tool === "laser") return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    lastPoint.current = pointFromEvent(event);
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = pointFromEvent(event);
+    if (!point) return;
+    if (tool === "laser") {
+      if (laser.current) { laser.current.style.left = `${event.clientX - laserMarkerSize / 2}px`; laser.current.style.top = `${event.clientY - laserMarkerSize / 2}px`; laser.current.style.opacity = "1"; }
+      return;
+    }
+    if (!lastPoint.current) return;
+    pendingPoint.current = point;
+    if (frame.current === null) frame.current = requestAnimationFrame(drawPending);
+  };
+  const endStroke = () => { lastPoint.current = null; pendingPoint.current = null; if (frame.current !== null) { cancelAnimationFrame(frame.current); frame.current = null; } };
+  const clearAnnotations = () => { const context = drawing.current?.getContext("2d"); if (context && drawing.current) context.clearRect(0, 0, drawing.current.width, drawing.current.height); const trailContext = laserTrail.current?.getContext("2d"); if (trailContext && laserTrail.current) trailContext.clearRect(0, 0, laserTrail.current.width, laserTrail.current.height); };
+  const presentationNodes = nodes;
+  return <main className="presentation-shell">
+    <header className={`presentation-toolbar ${toolbarCollapsed ? "collapsed" : ""}`}><div className="presentation-brand"><PresentationIcon size={17} /><strong>{project.name}</strong></div><div className="presentation-tools"><button className={tool === "laser" ? "active laser-tool" : ""} onClick={() => setTool("laser")} title="Red laser pointer (L)"><span className="laser-tool-dot" /> Laser</button><button className={tool === "pencil" ? "active" : ""} onClick={() => setTool("pencil")} title="Pencil (P)"><PenLine size={15} /> Pencil</button><button className={tool === "highlighter" ? "active" : ""} onClick={() => setTool("highlighter")} title="Highlighter (H)"><Highlighter size={15} /> Highlighter</button><button className={tool === "eraser" ? "active" : ""} onClick={() => setTool("eraser")} title="Eraser (E)"><Eraser size={15} /> Eraser</button><label className="presentation-color">Color <input type="color" value={tool === "highlighter" ? highlighterColor : pencilColor} disabled={tool === "laser" || tool === "eraser"} onChange={(event) => tool === "highlighter" ? setHighlighterColor(event.target.value) : setPencilColor(event.target.value)} /></label><label className="presentation-thickness">Size <input type="range" min="1" max="16" value={inkSize} onChange={(event) => setInkSize(+event.target.value)} /><b>{inkSize}px</b><small>[ ]</small></label><button onClick={clearAnnotations} title="Clear annotations"><Eraser size={15} /> Clear</button><button onClick={() => window.close()} title="Close presentation"><X size={16} /> Exit</button><button className="presentation-collapse" onClick={() => setToolbarCollapsed((collapsed) => !collapsed)} title={toolbarCollapsed ? "Expand toolbar" : "Collapse toolbar"}>{toolbarCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button></div></header>
+    <section className="presentation-stage" ref={surface} onPointerMove={tool === "laser" ? onPointerMove : undefined} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; }}>
+      <ReactFlow className="presentation-flow" nodes={presentationNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView onlyRenderVisibleElements={false} nodesConnectable={false} nodesDraggable={false} nodesFocusable={false} elementsSelectable={false} panOnDrag panActivationKeyCode="Space" zoomOnScroll zoomOnPinch zoomOnDoubleClick={false} defaultEdgeOptions={{ type: "smart" }}>
+        <Background gap={20} size={2} color="#d7e2e4" />
+        <MiniMap nodeColor={(node) => (node.data as NodeData).fill} />
+      </ReactFlow>
+      <canvas ref={drawing} className={`presentation-ink ${spaceHeld ? "space-held" : tool === "laser" ? "laser-active" : "drawing"}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; if (tool !== "laser") endStroke(); }} onWheelCapture={(event) => { event.preventDefault(); const nextZoom = reactFlow.getZoom() * (event.deltaY < 0 ? 1.1 : 0.9); reactFlow.zoomTo(Math.max(0.1, Math.min(4, nextZoom))); }} />
+      <canvas ref={laserTrail} className="presentation-laser-trail" />
+      <div ref={laser} className="presentation-laser" style={{ width: laserMarkerSize, height: laserMarkerSize }} />
+    </section>
+  </main>;
 }
 function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () => void }) {
   const [dialog, setDialog] = useState<{ type: "rename" | "delete"; project: Project } | null>(null);
@@ -1181,6 +1451,10 @@ function Editor({ project }: { project: Project }) {
             <FileJson size={16} />
             Download SKILL
           </button>
+          <button className="presentation-button" onClick={() => window.open(`/present/${project.id}`, "_blank", "noopener,noreferrer")} title="Open presentation in a new tab">
+            <PresentationIcon size={16} />
+            Present
+          </button>
           <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
             Export
@@ -1492,6 +1766,28 @@ type NodeUpdate = (
 ) => void;
 function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
   const [html, setHtml] = useState(data.html);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const uploadImage = async (file: File) => {
+    setUploadError("");
+    const validType = ["image/svg+xml", "image/png", "image/jpeg", "image/webp"].includes(file.type) || /\.(svg|png|jpe?g|webp)$/i.test(file.name);
+    if (!validType) { setUploadError("Use an SVG, PNG, JPG, or WebP image."); return; }
+    if (file.size > 5 * 1024 * 1024) { setUploadError("Images must be smaller than 5 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) {
+        const rawSvg = result.replace(/^data:image\/svg\+xml(?:;charset=[^;,]+)?;base64,/, "");
+        const svgText = result.startsWith("data:") && result.includes("base64,") ? atob(rawSvg) : result.replace(/^data:image\/svg\+xml(?:;charset=[^;,]+)?,/, "");
+        const safeSvg = DOMPurify.sanitize(svgText, { USE_PROFILES: { svg: true, svgFilters: true } });
+        if (!/<svg[\s>]/i.test(safeSvg)) { setUploadError("That SVG could not be validated."); return; }
+        update({ imageUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(safeSvg)}`, imageSource: "upload", imageAssetId: `upload:${file.name}:${file.size}:${file.lastModified}`, imageAssetName: file.name, imageAssetSource: undefined });
+      } else update({ imageUrl: result, imageSource: "upload", imageAssetId: `upload:${file.name}:${file.size}:${file.lastModified}`, imageAssetName: file.name, imageAssetSource: undefined });
+    };
+    reader.onerror = () => setUploadError("The image could not be read.");
+    reader.readAsDataURL(file);
+  };
   return (
     <div className="inspector-content">
       <div className="segmented">
@@ -1516,8 +1812,15 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
       </div>
       {data.kind === "image" && <>
         <Field label="Image URL">
-          <input type="url" value={data.imageUrl ?? ""} placeholder="https://example.com/image.png" onChange={(event) => update({ imageUrl: event.target.value })} />
+          <input type="url" value={data.imageSource === "upload" || data.imageSource === "store" ? "" : data.imageUrl ?? ""} placeholder="https://example.com/image.png" onChange={(event) => update({ imageUrl: event.target.value, imageSource: "url", imageAssetId: undefined, imageAssetName: undefined, imageAssetSource: undefined })} />
         </Field>
+        <div className="image-source-actions">
+          <label className="image-source-button"><Upload size={14} /> Upload Image<input ref={uploadInput} type="file" accept="image/svg+xml,image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(file); event.currentTarget.value = ""; }} /></label>
+          <button type="button" className="image-source-button" onClick={() => setStoreOpen(true)}><Grid3X3 size={14} /> Browse from Store</button>
+        </div>
+        {data.imageUrl && <div className="image-source-preview"><img src={data.imageUrl} alt={data.imageAssetName ?? "Selected image"} /><span>{data.imageAssetName ?? (data.imageSource === "store" ? "Store icon" : "Remote image")}</span><button type="button" onClick={() => update({ imageUrl: "", imageSource: "url", imageAssetId: undefined, imageAssetName: undefined, imageAssetSource: undefined })}>Remove</button></div>}
+        {uploadError && <p className="image-source-error">{uploadError}</p>}
+        {storeOpen && <IconStoreModal selectedId={data.imageAssetId} onClose={() => setStoreOpen(false)} onSelect={(icon) => { update({ imageUrl: icon.url, imageSource: "store", imageAssetId: icon.id, imageAssetName: icon.name, imageAssetSource: icon.source }); setStoreOpen(false); }} />}
         <div className="two-col">
           <Field label="Image position">
             <select value={data.imagePosition ?? "left"} onChange={(event) => update({ imagePosition: event.target.value as NodeData["imagePosition"] })}>
@@ -1634,6 +1937,83 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
       </div>
     </div>
   );
+}
+function IconStoreCard({ icon, selected, svg, failed, onSelect }: { icon: StoreIcon; selected: boolean; svg?: string; failed?: boolean; onSelect: (icon: StoreIcon) => void }) {
+  return <button className={`icon-store-card ${selected ? "selected" : ""}`} onClick={() => onSelect(icon)}><span className="icon-store-preview">{failed ? <b>{icon.name.slice(0, 2).toUpperCase()}</b> : svg ? <img src={svg} alt="" /> : <span className="icon-store-loading" />}</span><strong>{icon.name}</strong><small>{icon.category}</small></button>;
+}
+function IconStoreModal({ selectedId, onClose, onSelect }: { selectedId?: string; onClose: () => void; onSelect: (icon: StoreIcon) => void }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All");
+  const [visibleCount, setVisibleCount] = useState(24);
+  const [remoteIcons, setRemoteIcons] = useState<StoreIcon[]>([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteError, setRemoteError] = useState("");
+  const [assetSvgs, setAssetSvgs] = useState<Record<string, string>>({});
+  const [assetFailures, setAssetFailures] = useState<string[]>([]);
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) { setRemoteIcons([]); setRemoteError(""); setRemoteLoading(false); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setRemoteLoading(true);
+      setRemoteError("");
+      fetch(`https://api.iconify.design/search?query=${encodeURIComponent(term)}&limit=64`, { signal: controller.signal })
+        .then(async (response) => { if (!response.ok) throw new Error("Icon search failed"); return response.json() as Promise<{ icons?: string[] }>; })
+        .then((result) => setRemoteIcons((result.icons ?? []).map((id) => {
+          const separator = id.indexOf(":");
+          const prefix = separator > 0 ? id.slice(0, separator) : "iconify";
+          const name = separator > 0 ? id.slice(separator + 1) : id;
+          return { id: `iconify:${id}`, name: name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "), category: inferIconCategory(id), aliases: [term], source: "iconify" as const, url: `https://api.iconify.design/${encodeURIComponent(prefix)}/${encodeURIComponent(name)}.svg?height=64` };
+        })))
+        .catch((error) => { if (error.name !== "AbortError") { setRemoteIcons([]); setRemoteError("Store search is unavailable. Try again or use the curated results."); } })
+        .finally(() => { if (!controller.signal.aborted) setRemoteLoading(false); });
+    }, 260);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query]);
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    const local = iconManifest.filter((icon) => (category === "All" || icon.category === category) && (!normalized || [icon.name, icon.id, icon.category, ...icon.aliases].join(" ").toLowerCase().includes(normalized)));
+    const remote = remoteIcons.filter((icon) => category === "All" || icon.category === category);
+    return [...local, ...remote].filter((icon, index, all) => all.findIndex((candidate) => candidate.id === icon.id) === index);
+  }, [category, query, remoteIcons]);
+  const visible = filtered.slice(0, visibleCount);
+  useEffect(() => {
+    const iconifyIcons = visible.filter((icon) => icon.source === "iconify" && !assetSvgs[icon.id]);
+    const groups = new Map<string, StoreIcon[]>();
+    iconifyIcons.forEach((icon) => {
+      const parts = icon.id.slice("iconify:".length).split(":");
+      const prefix = parts.shift();
+      if (prefix) groups.set(prefix, [...(groups.get(prefix) ?? []), icon]);
+    });
+    if (!groups.size) return;
+    let cancelled = false;
+    Promise.all([...groups.entries()].map(async ([prefix, icons]) => {
+      const names = icons.map((icon) => icon.id.slice("iconify:".length).split(":").slice(1).join(":"));
+      const response = await fetch(`https://api.iconify.design/${encodeURIComponent(prefix)}.json?icons=${names.sort().map(encodeURIComponent).join(",")}`);
+      if (!response.ok) throw new Error("Icon collection failed");
+      const data = await response.json() as { prefix?: string; width?: number; height?: number; icons?: Record<string, { body: string; width?: number; height?: number; left?: number; top?: number }> };
+      return icons.map((icon) => {
+        const name = icon.id.slice("iconify:".length).split(":").slice(1).join(":");
+        const item = data.icons?.[name];
+        if (!item) throw new Error(`Missing icon ${name}`);
+        const width = item.width ?? data.width ?? 24, height = item.height ?? data.height ?? 24, left = item.left ?? 0, top = item.top ?? 0;
+        const safeSvg = DOMPurify.sanitize(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${left} ${top} ${width} ${height}">${item.body}</svg>`, { USE_PROFILES: { svg: true, svgFilters: true } });
+        return [icon.id, `data:image/svg+xml;charset=utf-8,${encodeURIComponent(safeSvg)}`] as const;
+      });
+    })).then((collections) => { if (!cancelled) setAssetSvgs((current) => ({ ...current, ...Object.fromEntries(collections.flat()) })); }).catch(() => { if (!cancelled) setAssetFailures((current) => [...new Set([...current, ...iconifyIcons.map((icon) => icon.id)])]); });
+    return () => { cancelled = true; };
+  }, [visible, assetSvgs]);
+  return <div className="icon-store-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className="icon-store" role="dialog" aria-modal="true" aria-labelledby="icon-store-title">
+      <header className="icon-store-head"><div><span className="eyebrow">Asset library</span><h2 id="icon-store-title">Browse from Store</h2><p>Real logos loaded on demand from Simple Icons, SVG Logos, and Iconify.</p></div><button className="quiet" onClick={onClose} title="Close"><X size={17} /></button></header>
+      <div className="icon-store-tools"><input autoFocus type="search" value={query} placeholder="Search Python, Render, PostgreSQL..." onChange={(event) => { setQuery(event.target.value); setVisibleCount(24); }} /><div className="icon-category-list">{iconCategories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => { setCategory(item); setVisibleCount(24); }}>{item}</button>)}</div></div>
+      <div className="icon-store-meta"><span>{filtered.length} matching icons</span><span>Showing {visible.length}</span></div>
+      {remoteLoading && <div className="icon-store-status">Searching the full Iconify catalog...</div>}
+      {remoteError && <div className="icon-store-status error">{remoteError}</div>}
+      {visible.length ? <div className="icon-store-grid">{visible.map((icon) => <IconStoreCard icon={icon} selected={selectedId === icon.id} svg={icon.source === "iconify" ? assetSvgs[icon.id] : icon.url} failed={assetFailures.includes(icon.id)} key={icon.id} onSelect={onSelect} />)}</div> : !remoteLoading && <div className="icon-store-empty"><Grid3X3 size={22} /><strong>No icons found</strong><span>Try another name or category.</span></div>}
+      {visible.length < filtered.length && <button className="icon-store-more" onClick={() => setVisibleCount((count) => count + 24)}>Load more icons</button>}
+    </section>
+  </div>;
 }
 function AppearancePanel({
   data,
