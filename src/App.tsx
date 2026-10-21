@@ -44,6 +44,7 @@ import {
   Hand,
   Hexagon,
   Home,
+  Image as ImageIcon,
   Link2,
   MousePointer2,
   PanelRight,
@@ -65,6 +66,7 @@ type ShapeKind =
   | "ellipse"
   | "diamond"
   | "text"
+  | "image"
   | "container";
 type NodeData = {
   kind: ShapeKind;
@@ -93,6 +95,12 @@ type NodeData = {
   height?: number;
   clipContent?: boolean;
   layout?: "free" | "grid" | "horizontal" | "vertical";
+  imageUrl?: string;
+  imagePosition?: "left" | "right" | "top" | "bottom" | "center";
+  imageFit?: "cover" | "contain" | "fill";
+  imageSize?: number;
+  imageOpacity?: number;
+  imageRadius?: number;
 };
 type EdgeData = {
   route: "straight" | "orthogonal" | "free";
@@ -141,6 +149,7 @@ const themes: Theme[] = [
   ["Light Slate", "#EEF1F6", "#9AA4B2", "#28313D"],
   ["Clean White", "#FFFFFF", "#333333", "#202020"],
   ["Warm Beige", "#FFF0DD", "#CDAF87", "#4B3824"],
+  ["Transparent", "transparent", "transparent", "#173746"],
 ].map(([name, fill, border, text]) => ({ name, fill, border, text }));
 
 const baseData = (kind: ShapeKind, label?: string): NodeData => ({
@@ -151,6 +160,8 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
       ? "System boundary"
       : kind === "text"
         ? "Annotation"
+        : kind === "image"
+          ? "Image annotation"
         : "Component"),
   html: false,
   fill: kind === "container" ? "#F8FAFC" : "#DDF4FF",
@@ -171,6 +182,12 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
   vertical: "center",
   padding: 12,
   layout: kind === "container" ? "grid" : "free",
+  imageUrl: "https://placehold.co/640x360/e8f7f8/176b7d?text=Image",
+  imagePosition: "left",
+  imageFit: "contain",
+  imageSize: 42,
+  imageOpacity: 100,
+  imageRadius: 4,
 });
 const initialNodes: Node<NodeData>[] = [
   {
@@ -344,9 +361,15 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
   const content = data.html
     ? DOMPurify.sanitize(data.label)
     : data.label.replaceAll("\n", "<br />");
+  const imagePosition = data.imagePosition ?? "left";
+  const imageCentered = imagePosition === "center";
+  const imageHorizontal = imagePosition === "left" || imagePosition === "right";
+  const imageDirection = imagePosition === "right" ? "row-reverse" : imagePosition === "top" || imageCentered ? "column" : imagePosition === "bottom" ? "column-reverse" : "row";
+  const textAlignItems = data.vertical === "top" ? "flex-start" : data.vertical === "bottom" ? "flex-end" : "center";
+  const textJustifyContent = data.align === "left" ? "flex-start" : data.align === "right" ? "flex-end" : "center";
   return (
     <div
-      className={`diagram-node ${data.kind} ${selected ? "is-selected" : ""}`}
+      className={`diagram-node ${data.kind} ${data.kind === "image" ? "image-node" : ""} ${selected ? "is-selected" : ""}`}
       style={{
          background: data.kind === "text" ? "transparent" : rgba(data.fill, data.fillOpacity),
          borderColor: rgba(data.border, data.borderOpacity),
@@ -358,16 +381,20 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         fontSize: data.fontSize,
          fontWeight: data.fontWeight,
          textAlign: data.align,
-         flexDirection: "column",
+         flexDirection: data.kind === "image" ? imageDirection : "column",
          alignItems:
-           data.align === "left"
+           data.kind === "image"
+             ? imageCentered ? "center" : "stretch"
+             : data.align === "left"
              ? "flex-start"
              : data.align === "right"
                ? "flex-end"
                : "center",
          justifyContent:
-          data.vertical === "top"
-            ? "flex-start"
+           data.kind === "image"
+             ? imageCentered ? "center" : "initial"
+             : data.vertical === "top"
+             ? "flex-start"
             : data.vertical === "bottom"
               ? "flex-end"
               : "center",
@@ -389,6 +416,11 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             strokeDasharray={data.borderStyle === "dashed" ? `${data.dashLength ?? 8} ${data.dashGap ?? 5}` : undefined}
           />
         </svg>
+      )}
+      {data.kind === "image" && (
+        <div className="image-media" style={{ flex: `0 0 ${data.imageSize ?? 42}%`, width: imageCentered ? `${data.imageSize ?? 42}%` : undefined, minWidth: imageHorizontal ? 0 : undefined, minHeight: imageHorizontal ? undefined : 0, borderRadius: data.imageRadius ?? 4 }}>
+          <img src={data.imageUrl} alt={data.label} draggable={false} style={{ objectFit: data.imageFit ?? "contain", opacity: (data.imageOpacity ?? 100) / 100, borderRadius: data.imageRadius ?? 4 }} />
+        </div>
       )}
       {selected && (
         <NodeResizer
@@ -432,9 +464,10 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           <Handle type="source" position={Position.Right} id="right" />
         </>
       )}
-      <div
+      {!(data.kind === "image" && !data.label.trim()) && <div
         ref={input}
         className="node-copy"
+        style={data.kind === "image" ? { display: "flex", flex: "1 1 auto", width: "auto", minWidth: 0, minHeight: 0, alignItems: textAlignItems, justifyContent: textJustifyContent } : undefined}
         contentEditable
         suppressContentEditableWarning
         dangerouslySetInnerHTML={{ __html: content }}
@@ -458,6 +491,7 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           if (e.key === "Enter" && !data.html) e.preventDefault();
         }}
       />
+      }
     </div>
   );
 }
@@ -552,6 +586,7 @@ const shapeOptions: [ShapeKind, string, typeof Square][] = [
   ["ellipse", "Ellipse", Circle],
   ["diamond", "Diamond", Hexagon],
   ["text", "Text", Type],
+  ["image", "Image", ImageIcon],
   ["container", "Frame", PanelRight],
 ];
 
@@ -703,8 +738,8 @@ function Editor({ project }: { project: Project }) {
         x: event.clientX,
         y: event.clientY,
       });
-      const width = kind === "text" ? 180 : kind === "container" ? 330 : 170,
-        height = kind === "text" ? 48 : kind === "container" ? 220 : 76;
+       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : 170,
+         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       snapshot();
       const id = `${kind}-${Date.now()}`;
@@ -850,8 +885,8 @@ function Editor({ project }: { project: Project }) {
       }
       snapshot();
       const id = `${kind}-${Date.now()}`;
-      const width = kind === "text" ? 180 : kind === "container" ? 330 : 170,
-        height = kind === "text" ? 48 : kind === "container" ? 220 : 76;
+      const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : 170,
+        height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : 76;
       const selectedFrame = selected?.data.kind === "container" ? selected : undefined;
       const selectedFramePosition = selectedFrame ? absolutePosition(selectedFrame) : undefined;
       const absolute = selectedFramePosition ? { x: selectedFramePosition.x + 24, y: selectedFramePosition.y + 56 } : pos;
@@ -881,8 +916,8 @@ function Editor({ project }: { project: Project }) {
         x: event.clientX,
         y: event.clientY,
       });
-      const width = kind === "text" ? 180 : kind === "container" ? 330 : 170,
-        height = kind === "text" ? 48 : kind === "container" ? 220 : 76;
+      const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : 170,
+        height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       const framePosition = frame ? absolutePosition(frame) : undefined;
       snapshot();
@@ -1338,7 +1373,7 @@ function Editor({ project }: { project: Project }) {
           )}
           <div className="panel-resizer left-edge" onPointerDown={(event) => startPanelResize("right", event)} />
         </aside>
-      </div>
+       </div>
       {exportOpen && (
         <div className="export-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setExportOpen(false)}>
           <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
@@ -1388,16 +1423,17 @@ function hsvToHex(h: number, s: number, v: number) {
   return `#${[r, g, b].map((channel) => Math.round((channel + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
 }
 function rgba(hex: string, opacity = 100) {
+  if (hex === "transparent") return "transparent";
   const clean = hex.replace("#", "").padEnd(6, "0");
   return `rgba(${parseInt(clean.slice(0, 2), 16)}, ${parseInt(clean.slice(2, 4), 16)}, ${parseInt(clean.slice(4, 6), 16)}, ${Math.max(0, Math.min(100, opacity)) / 100})`;
 }
 function ColorPicker({ value, opacity = 100, onChange }: { value: string; opacity?: number; onChange: (color: string, opacity: number) => void }) {
   const [open, setOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ left: 12, top: 12 });
-  const [hsv, setHsv] = useState(() => hexToHsv(value));
+  const [hsv, setHsv] = useState(() => hexToHsv(value === "transparent" ? "#FFFFFF" : value));
   const [alpha, setAlpha] = useState(opacity);
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => { setHsv(hexToHsv(value)); setAlpha(opacity); }, [value, opacity]);
+  useEffect(() => { setHsv(hexToHsv(value === "transparent" ? "#FFFFFF" : value)); setAlpha(opacity); }, [value, opacity]);
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as unknown as globalThis.Node)) setOpen(false); };
@@ -1478,6 +1514,42 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
           HTML source
         </button>
       </div>
+      {data.kind === "image" && <>
+        <Field label="Image URL">
+          <input type="url" value={data.imageUrl ?? ""} placeholder="https://example.com/image.png" onChange={(event) => update({ imageUrl: event.target.value })} />
+        </Field>
+        <div className="two-col">
+          <Field label="Image position">
+            <select value={data.imagePosition ?? "left"} onChange={(event) => update({ imagePosition: event.target.value as NodeData["imagePosition"] })}>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+              <option value="center">Center</option>
+            </select>
+          </Field>
+          <Field label="Image fit">
+            <select value={data.imageFit ?? "contain"} onChange={(event) => update({ imageFit: event.target.value as NodeData["imageFit"] })}>
+              <option value="contain">Contain</option>
+              <option value="cover">Cover</option>
+              <option value="fill">Stretch</option>
+            </select>
+          </Field>
+        </div>
+        <div className="two-col">
+          <Field label="Image size">
+            <input type="range" min="15" max="75" value={data.imageSize ?? 42} onChange={(event) => update({ imageSize: +event.target.value })} />
+            <b>{data.imageSize ?? 42}%</b>
+          </Field>
+          <Field label="Image opacity">
+            <input type="range" min="0" max="100" value={data.imageOpacity ?? 100} onChange={(event) => update({ imageOpacity: +event.target.value })} />
+            <b>{data.imageOpacity ?? 100}%</b>
+          </Field>
+        </div>
+        <Field label="Image corner radius">
+          <input type="number" min="0" max="48" value={data.imageRadius ?? 4} onChange={(event) => update({ imageRadius: Math.max(0, +event.target.value) })} />
+        </Field>
+      </>}
       <Field label="Content">
         <textarea
           value={data.label}
@@ -1715,8 +1787,8 @@ function ThemePanel({ apply }: { apply: (theme: Theme) => void }) {
     <div className="theme-grid">
       {themes.map((t) => (
         <button className="theme-swatch" key={t.name} onClick={() => apply(t)}>
-          <span
-            style={{ background: t.fill, borderColor: t.border, color: t.text }}
+           <span className={t.fill === "transparent" ? "is-transparent" : ""}
+             style={{ ...(t.fill === "transparent" ? {} : { background: t.fill }), borderColor: t.border, color: t.text }}
           />
           <small>{t.name}</small>
         </button>

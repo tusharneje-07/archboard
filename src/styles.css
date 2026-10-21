@@ -437,6 +437,10 @@ h2 {
 .diagram-node.text {
   overflow: visible;
 }
+.image-node { gap: 10px; }
+.image-media { position: relative; overflow: hidden; min-width: 0; min-height: 0; }
+.image-media img { display: block; width: 100%; height: 100%; user-select: none; }
+.image-node .node-copy { overflow: auto; }
 .diagram-node.is-selected {
   box-shadow:
     0 0 0 2px #1c8da5,
@@ -657,6 +661,13 @@ h2 {
   height: 27px;
   flex: 0 0 27px;
   border: 2px solid;
+}
+.theme-swatch span.is-transparent {
+  border-color: #b9c4c6;
+  background-color: #fff;
+  background-image: linear-gradient(45deg, #dfe4e5 25%, transparent 25%), linear-gradient(-45deg, #dfe4e5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe4e5 75%), linear-gradient(-45deg, transparent 75%, #dfe4e5 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
 .theme-swatch small {
   color: #60777e;
