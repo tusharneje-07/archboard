@@ -718,23 +718,35 @@ function PresentationView({ project }: { project: Project }) {
       absolutePositions.set(node.id, position);
       return position;
     };
-    return project.nodes.map((node) => ({
-      ...node,
-      parentId: undefined,
-      extent: undefined,
+    return project.nodes.map((node) => {
+      const { parentId: _parentId, extent: _extent, measured: _measured, ...flatNode } = node;
+      return {
+      ...flatNode,
       position: getAbsolutePosition(node),
+      width: Number(node.style?.width ?? node.data.width ?? 170),
+      height: Number(node.style?.height ?? node.data.height ?? 76),
       draggable: false,
       selectable: false,
       connectable: false,
       deletable: false,
       focusable: false,
-    }));
+      };
+    });
   }, [project.nodes]);
   const edges = useMemo(() => {
     const nodeIds = new Set(nodes.map((node) => node.id));
+    const sourceHandles = new Set(["top", "bottom", "left", "right"]);
+    const targetHandles = new Set(["bottom-target", "left-target", "right-target"]);
     return project.edges
       .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
-      .map((edge) => ({ ...edge, selectable: false, deletable: false, focusable: false }));
+      .map((edge) => ({
+        ...edge,
+        sourceHandle: sourceHandles.has(edge.sourceHandle ?? "") ? edge.sourceHandle : undefined,
+        targetHandle: targetHandles.has(edge.targetHandle ?? "") ? edge.targetHandle : undefined,
+        selectable: false,
+        deletable: false,
+        focusable: false,
+      }));
   }, [nodes, project.edges]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.code === "Space") setSpaceHeld(true); };
