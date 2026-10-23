@@ -161,8 +161,8 @@ function curveControls(start: Point & { side: string }, end: Point & { side: str
 
 function routePoints(start: Point, end: Point, route: string): Point[] {
   if (route === "orthogonal") {
-    const verticalEndpoints = ["top", "bottom"].includes((start as Point & { side?: string }).side ?? "") && ["top", "bottom"].includes((end as Point & { side?: string }).side ?? "");
-    if (verticalEndpoints) { const midY = start.y + (end.y - start.y) / 2; return [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]; }
+    const verticalTarget = ["top", "bottom"].includes((end as Point & { side?: string }).side ?? "");
+    if (verticalTarget) { const midY = start.y + (end.y - start.y) / 2; return [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]; }
     const midX = start.x + (end.x - start.x) / 2;
     return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end];
   }
@@ -177,7 +177,7 @@ function routePoints(start: Point, end: Point, route: string): Point[] {
 }
 
 function routePath(start: Point, end: Point, route: string) {
-  if (route === "orthogonal") { const verticalEndpoints = ["top", "bottom"].includes((start as Point & { side?: string }).side ?? "") && ["top", "bottom"].includes((end as Point & { side?: string }).side ?? ""); if (verticalEndpoints) { const midY = start.y + (end.y - start.y) / 2; return `M ${start.x} ${start.y} L ${start.x} ${midY} L ${end.x} ${midY} L ${end.x} ${end.y}`; } const midX = start.x + (end.x - start.x) / 2; return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${end.y} L ${end.x} ${end.y}`; }
+  if (route === "orthogonal") { const verticalTarget = ["top", "bottom"].includes((end as Point & { side?: string }).side ?? ""); if (verticalTarget) { const midY = start.y + (end.y - start.y) / 2; return `M ${start.x} ${start.y} L ${start.x} ${midY} L ${end.x} ${midY} L ${end.x} ${end.y}`; } const midX = start.x + (end.x - start.x) / 2; return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${end.y} L ${end.x} ${end.y}`; }
   if (route === "free") { const { controlOne, controlTwo } = curveControls(start as Point & { side: string }, end as Point & { side: string }); return `M ${start.x} ${start.y} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${end.x} ${end.y}`; }
   return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
 }

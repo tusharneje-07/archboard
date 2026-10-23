@@ -525,9 +525,9 @@ function SmartEdge({
   const curveDistance = Math.max(56, Math.min(150, Math.hypot(lineTarget.x - lineSource.x, lineTarget.y - lineSource.y) * 0.34));
   const controlOne = { x: lineSource.x + sourceOutward.x * curveDistance, y: lineSource.y + sourceOutward.y * curveDistance };
   const controlTwo = { x: lineTarget.x + targetOutward.x * curveDistance, y: lineTarget.y + targetOutward.y * curveDistance };
-  const verticalEndpoints = [Position.Top, Position.Bottom].includes(sourcePosition) && [Position.Top, Position.Bottom].includes(targetPosition);
+  const verticalTarget = [Position.Top, Position.Bottom].includes(targetPosition);
   const midY = lineSource.y + (lineTarget.y - lineSource.y) / 2;
-  const orthogonalPoints = verticalEndpoints
+  const orthogonalPoints = verticalTarget
     ? [lineSource, { x: lineSource.x, y: midY }, { x: lineTarget.x, y: midY }, lineTarget]
     : [lineSource, { x: midX, y: lineSource.y }, { x: midX, y: lineTarget.y }, lineTarget];
   const orthogonalPath = orthogonalPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
