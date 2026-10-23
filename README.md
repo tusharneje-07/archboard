@@ -19,7 +19,18 @@ Open the local URL printed by Vite. Production checks are available with `npm ru
 - 20 reference-inspired themes plus per-object appearance controls
 - React Flow selection, moving, resizing, zooming, panning, snapping, grid, minimap, and fit-to-screen
 - LocalStorage autosave, JSON import/export, PNG/SVG export, and keyboard undo/redo/delete
+- Stateless unauthenticated MCP endpoint at `/api/mcp` for generating diagram artifacts from ChatGPT or other MCP clients
 
 ## Notes
 
 Containers support parent-child positioning in imported/initial diagrams and can be used as system boundaries. For the most reliable grouping workflow, create a container first and place child shapes over its area, then use React Flow's normal multi-selection and movement tools. PNG/SVG export captures the canvas viewport; zoom to fit before exporting for a complete diagram.
+
+## MCP connection
+
+The deployed MCP endpoint is:
+
+```text
+https://archboard-iota.vercel.app/api/mcp
+```
+
+It exposes the `generate_architecture_diagram` tool. The tool accepts an Archboard `{ "nodes": [], "edges": [] }` diagram and returns PNG by default. Set `format` to `svg`, `jpg`, or `json` when another format is requested. The endpoint is intentionally unauthenticated for the current deployment.

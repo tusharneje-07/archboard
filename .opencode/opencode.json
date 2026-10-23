@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "archboard": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "mcp-remote",
+        "http://127.0.0.1:3000/api/mcp"
+      ],
+      "enabled": true
+    }
+  }
+}

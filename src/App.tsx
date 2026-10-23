@@ -942,7 +942,7 @@ function Editor({ project }: { project: Project }) {
     ),
     [grid, setGrid] = useState(true),
     [snap, setSnap] = useState(true),
-    [leftTab, setLeftTab] = useState<"shapes" | "layers">("shapes"),
+    [leftTab, setLeftTab] = useState<"shapes" | "layers" | "code">("shapes"),
     [leftWidth, setLeftWidth] = useState(250),
     [rightWidth, setRightWidth] = useState(250),
     [exportOpen, setExportOpen] = useState(false),
@@ -950,7 +950,12 @@ function Editor({ project }: { project: Project }) {
     [exportTransparent, setExportTransparent] = useState(false),
     [exportQuality, setExportQuality] = useState(90),
     [exportDpi, setExportDpi] = useState(144),
-    [exportPreview, setExportPreview] = useState("");
+    [exportPreview, setExportPreview] = useState(""),
+    [importOpen, setImportOpen] = useState(false),
+    [importDraft, setImportDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
+    [importError, setImportError] = useState(""),
+    [codeDraft, setCodeDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
+    [codeError, setCodeError] = useState("");
   const reactFlow = useReactFlow(),
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
@@ -991,7 +996,44 @@ function Editor({ project }: { project: Project }) {
       />,
     );
   }, [nodes, selectedId]);
-  useEffect(() => { if (layerHost.current) layerHost.current.style.display = leftTab === "layers" ? "block" : "none"; }, [leftTab]);
+  const diagramJson = () => JSON.stringify({ nodes, edges }, null, 2);
+  const parseDiagramJson = (source: string): { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] } => {
+    const value: unknown = JSON.parse(source);
+    if (!value || typeof value !== "object" || !Array.isArray((value as { nodes?: unknown }).nodes) || !Array.isArray((value as { edges?: unknown }).edges)) {
+      throw new Error("JSON must contain nodes and edges arrays.");
+    }
+    return value as { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
+  };
+  const applyDiagramJson = (source: string, closeImport = false) => {
+    try {
+      const value = parseDiagramJson(source);
+      setNodes(value.nodes);
+      setEdges(value.edges);
+      setCodeDraft(JSON.stringify(value, null, 2));
+      setCodeError("");
+      setImportError("");
+      if (closeImport) setImportOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid diagram JSON.";
+      if (closeImport) setImportError(message);
+      else setCodeError(message);
+    }
+  };
+  const openImportDialog = () => {
+    setImportDraft(diagramJson());
+    setImportError("");
+    setImportOpen(true);
+  };
+  const readImportFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImportDraft(String(reader.result));
+      setImportError("");
+    };
+    reader.onerror = () => setImportError("Could not read that file.");
+    reader.readAsText(file);
+  };
+  useEffect(() => { if (layerHost.current) layerHost.current.style.display = leftTab === "layers" ? "block" : "none"; if (leftTab === "code") { setCodeDraft(diagramJson()); setCodeError(""); } }, [leftTab]);
   const startPanelResize = (side: "left" | "right", event: React.PointerEvent) => { const start = event.clientX, width = side === "left" ? leftWidth : rightWidth; const move = (current: PointerEvent) => { const next = Math.max(190, Math.min(420, width + (side === "left" ? current.clientX - start : start - current.clientX))); side === "left" ? setLeftWidth(next) : setRightWidth(next); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); };
   useEffect(() => {
     const onDragStart = (event: DragEvent) => {
@@ -1421,15 +1463,6 @@ function Editor({ project }: { project: Project }) {
     a.download = "archboard-diagram.json";
     a.click();
   };
-  const importJson = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = JSON.parse(String(reader.result));
-      setNodes(value.nodes ?? []);
-      setEdges(value.edges ?? []);
-    };
-    reader.readAsText(file);
-  };
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1448,17 +1481,9 @@ function Editor({ project }: { project: Project }) {
           <button className="icon-button" onClick={() => navigate("/")} title="Home">
             <Home size={17} />
           </button>
-          <label className="icon-button" title="Import JSON">
+          <button className="icon-button" onClick={openImportDialog} title="Import JSON">
             <Upload size={17} />
-            <input
-              type="file"
-              accept=".json"
-              hidden
-              onChange={(e) =>
-                e.target.files?.[0] && importJson(e.target.files[0])
-              }
-            />
-          </label>
+          </button>
           <button className="skill-button" onClick={downloadSkill} title="Download SKILL">
             <FileJson size={16} />
             Download SKILL
@@ -1478,6 +1503,7 @@ function Editor({ project }: { project: Project }) {
           <div className="panel-tabs">
             <button className={leftTab === "shapes" ? "active" : ""} onClick={() => setLeftTab("shapes")}>Shapes</button>
             <button className={leftTab === "layers" ? "active" : ""} onClick={() => setLeftTab("layers")}>Layers</button>
+            <button className={leftTab === "code" ? "active" : ""} onClick={() => setLeftTab("code")}><FileJson size={13} /> Code</button>
           </div>
           {leftTab === "shapes" && <><div className="panel-heading">
             <div>
@@ -1511,7 +1537,13 @@ function Editor({ project }: { project: Project }) {
                 <Plus size={13} className="shape-plus" />
               </button>
             ))}
-          </div></>}
+           </div></>}
+           {leftTab === "code" && <div className="code-panel">
+             <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button></div>
+             <textarea className="diagram-code-editor" value={codeDraft} onChange={(event) => setCodeDraft(event.target.value)} spellCheck={false} aria-label="Current diagram JSON" />
+             {codeError && <p className="code-error">{codeError}</p>}
+             <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button>
+           </div>}
           <div className="left-footer">
             <div className="hint">
               <Hand size={14} /> Space + drag to pan
@@ -1660,7 +1692,7 @@ function Editor({ project }: { project: Project }) {
           <div className="panel-resizer left-edge" onPointerDown={(event) => startPanelResize("right", event)} />
         </aside>
        </div>
-      {exportOpen && (
+       {exportOpen && (
         <div className="export-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setExportOpen(false)}>
           <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
             <div className="export-dialog-head"><div><span className="eyebrow">Canvas export</span><h2 id="export-title">Export</h2></div><button className="quiet" onClick={() => setExportOpen(false)}><X size={17} /></button></div>
@@ -1674,7 +1706,16 @@ function Editor({ project }: { project: Project }) {
             <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" onClick={() => exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div>
           </section>
         </div>
-      )}
+       )}
+       {importOpen && <div className="import-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setImportOpen(false)}>
+         <section className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
+           <div className="import-dialog-head"><div><span className="eyebrow">Diagram source</span><h2 id="import-title">Import JSON</h2></div><button className="quiet" onClick={() => setImportOpen(false)}><X size={17} /></button></div>
+           <p className="helper">Paste an Archboard diagram object or choose a `.json` file. It must contain `nodes` and `edges` arrays.</p>
+           <textarea className="diagram-code-editor import-editor" value={importDraft} onChange={(event) => setImportDraft(event.target.value)} spellCheck={false} aria-label="Import diagram JSON" />
+           {importError && <p className="code-error">{importError}</p>}
+           <div className="import-actions"><label className="file-picker">Choose JSON file<input type="file" accept=".json,application/json" onChange={(event) => event.target.files?.[0] && readImportFile(event.target.files[0])} /></label><button onClick={() => setImportOpen(false)}>Cancel</button><button className="primary" onClick={() => applyDiagramJson(importDraft, true)}><Upload size={15} /> Upload JSON</button></div>
+         </section>
+       </div>}
     </main>
   );
 }

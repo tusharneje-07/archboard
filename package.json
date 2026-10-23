@@ -5,24 +5,31 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "mcp:dev": "tsx scripts/mcp-local.ts",
     "build": "tsc -b && vite build",
     "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.1",
     "@xyflow/react": "^12.8.6",
     "dompurify": "^3.2.6",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sharp": "^0.35.5",
+    "zod": "^4.6.7",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@types/dompurify": "^3.2.0",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vite": "^6.0.5"
   }
