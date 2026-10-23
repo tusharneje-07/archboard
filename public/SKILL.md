@@ -19,9 +19,9 @@ Return valid JSON only when the user asks for an import file. Do not add Markdow
 
 When using Archboard through the MCP server, use the MCP contract below rather than assuming that every browser-editor field is rendered identically.
 
-- MCP nodes use absolute canvas coordinates. `parentId` and `extent: "parent"` are ignored by the MCP renderer and produce validation warnings. Place Frame children with their absolute canvas positions.
-- MCP labels are plain text. `html: true` is ignored and produces a warning.
-- MCP labels are single-line. Literal `\n` or actual newline characters are replaced with a space and produce a warning. Use short labels or separate `text` nodes for multiline explanations.
+- MCP uses the same node, Frame, label, image, handle, arrow, and route semantics as the browser renderer. Frame children may use `parentId` and `extent: "parent"` with Frame-relative positions.
+- MCP sanitizes `html: true` labels into plain SVG text while preserving their readable content.
+- MCP preserves multiline labels, including literal `\n` and actual newline characters, and renders them as separate text lines.
 - Frame labels render at the top-left with padding in MCP output. Ordinary node labels remain centered.
 - Use MCP `mode: "validate"` before rendering when accuracy matters. It returns `valid`, per-field warnings, node bounding boxes, computed edge points, label anchor points, label rectangles, and overlap warnings without creating an image.
 - Use MCP `format: "png"` for the default image. `filePath` writes the artifact to `/tmp` and returns `{ "path", "width", "height" }` metadata. `png_bytes: "base64"` also returns PNG image content.

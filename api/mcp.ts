@@ -36,7 +36,7 @@ Archboard supports architecture shapes, Frames, editable labels, themes, colors,
 
 Use the generate_architecture_diagram tool for architecture diagrams, system designs, service maps, and visual explanations. The tool accepts a complete diagram or a complete diagram plus incremental operations. It returns PNG by default, but strict validation is enabled by default: if any warning exists, the tool returns a repair report instead of a misleading image. Fix every warning and call the tool again. You may use mode: "validate" first for a cheap geometry-only pass.
 
-MCP renderer contract: every node must use absolute canvas coordinates. Do not use parentId or extent for MCP input; they are reported as unsupported warnings and are not used for layout. Frame nodes still work as visual boundaries, but child nodes must have their own absolute position. Labels are plain text only: html is ignored, and literal \\n in labels is replaced with a space and reported as a warning. Use short single-line labels, or separate text nodes for multiline explanation. Frame titles render top-left with padding.
+MCP renderer follows the complete SKILL.md diagram contract. It supports relative Frame children through parentId and extent, multiline labels, node styling, images, handles, semantic arrow direction, straight/orthogonal/free routes, connector labels, and marker metadata. Read archboard://skill before generating a diagram and preserve the complete diagram semantics. html labels are sanitized to plain SVG text by the artifact renderer.
 
 The diagram object is { nodes: [], edges: [] }. Every node has id, type: "shape", position {x,y}, style {width,height}, and data. data.kind is rectangle, rounded, ellipse, diamond, text, image, or container. data contains label, html, fill, border, textColor, borderWidth, borderStyle, radius, fontFamily, fontSize, fontWeight, align, vertical, padding, width, and height. Image nodes may also contain imageUrl, imagePosition (left/right/top/bottom/center), imageFit (contain/cover/fill), imageSize, imageOpacity, imageRadius, imageSource, imageAssetId, imageAssetSource, and imageAssetName.
 
@@ -84,7 +84,8 @@ const safeColor = (value: unknown, fallback: string) => {
   return color === "transparent" || /^#[0-9a-f]{3,8}$/i.test(color) || /^rgba?\([\d\s,.%]+\)$/.test(color) ? color : fallback;
 };
 const stripHtml = (value: string) => value.replace(/<[^>]*>/g, "");
-const displayLabel = (value: unknown, html = false) => stripHtml(stringValue(value, "")).replace(/\r?\n|\\n/g, " ");
+const displayLabel = (value: unknown, html = false) => stripHtml(stringValue(value, "")).replace(/\\n/g, "\n");
+const labelLines = (value: string) => value.split(/\r?\n/);
 
 function normalizeDiagram(value: unknown): Diagram {
   const parsed = typeof value === "string" ? JSON.parse(value) : value;
@@ -122,10 +123,20 @@ function applyAutoLayout(diagram: Diagram, hints: { rankDirection?: "LR" | "TB";
 }
 
 function flattenNodes(diagram: Diagram): FlatNode[] {
+  const byId = new Map(diagram.nodes.map((node) => [node.id, node]));
+  const absolutePosition = (node: DiagramNode, visiting = new Set<string>()): Point => {
+    const local = { x: numberValue(node.position?.x, 0), y: numberValue(node.position?.y, 0) };
+    if (!node.parentId || visiting.has(node.id)) return local;
+    const parent = byId.get(node.parentId);
+    if (!parent) return local;
+    visiting.add(node.id);
+    const parentPosition = absolutePosition(parent, visiting);
+    return { x: parentPosition.x + local.x, y: parentPosition.y + local.y };
+  };
   return diagram.nodes.map((node) => {
     const width = numberValue(node.style?.width, numberValue(node.data?.width, 170));
     const height = numberValue(node.style?.height, numberValue(node.data?.height, 76));
-    const position = { x: numberValue(node.position?.x, 0), y: numberValue(node.position?.y, 0) };
+    const position = absolutePosition(node);
     return { node, position, width, height, box: { ...position, width, height } };
   });
 }
@@ -135,11 +146,23 @@ function handlePoint(item: FlatNode, handle: string | undefined, target: boolean
   return side === "left" ? { x: item.position.x, y: item.position.y + item.height / 2, side } : side === "right" ? { x: item.position.x + item.width, y: item.position.y + item.height / 2, side } : side === "bottom" ? { x: item.position.x + item.width / 2, y: item.position.y + item.height, side } : { x: item.position.x + item.width / 2, y: item.position.y, side };
 }
 
+function offsetPoint(point: Point & { side: string }, amount: number): Point & { side: string } {
+  const offsets: Record<string, Point> = { left: { x: -amount, y: 0 }, right: { x: amount, y: 0 }, top: { x: 0, y: -amount }, bottom: { x: 0, y: amount } };
+  const offset = offsets[point.side] ?? offsets.top;
+  return { x: point.x - offset.x, y: point.y - offset.y, side: point.side };
+}
+
+function curveControls(start: Point & { side: string }, end: Point & { side: string }) {
+  const outward: Record<string, Point> = { left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 } };
+  const sourceOutward = outward[start.side] ?? outward.top, targetOutward = outward[end.side] ?? outward.top;
+  const distance = Math.max(56, Math.min(150, Math.hypot(end.x - start.x, end.y - start.y) * 0.34));
+  return { controlOne: { x: start.x + sourceOutward.x * distance, y: start.y + sourceOutward.y * distance }, controlTwo: { x: end.x + targetOutward.x * distance, y: end.y + targetOutward.y * distance } };
+}
+
 function routePoints(start: Point, end: Point, route: string): Point[] {
   if (route === "orthogonal") { const midX = start.x + (end.x - start.x) / 2; return [start, { x: midX, y: start.y }, { x: midX, y: end.y }, end]; }
   if (route === "free") {
-    const controlOne = { x: start.x + (end.x - start.x) * 0.35, y: start.y };
-    const controlTwo = { x: end.x - (end.x - start.x) * 0.35, y: end.y };
+    const { controlOne, controlTwo } = curveControls(start as Point & { side: string }, end as Point & { side: string });
     return Array.from({ length: 13 }, (_, index) => {
       const t = index / 12, inverse = 1 - t;
       return { x: inverse ** 3 * start.x + 3 * inverse ** 2 * t * controlOne.x + 3 * inverse * t ** 2 * controlTwo.x + t ** 3 * end.x, y: inverse ** 3 * start.y + 3 * inverse ** 2 * t * controlOne.y + 3 * inverse * t ** 2 * controlTwo.y + t ** 3 * end.y };
@@ -150,7 +173,7 @@ function routePoints(start: Point, end: Point, route: string): Point[] {
 
 function routePath(start: Point, end: Point, route: string) {
   if (route === "orthogonal") { const midX = start.x + (end.x - start.x) / 2; return `M ${start.x} ${start.y} L ${midX} ${start.y} L ${midX} ${end.y} L ${end.x} ${end.y}`; }
-  if (route === "free") return `M ${start.x} ${start.y} C ${start.x + (end.x - start.x) * 0.35} ${start.y}, ${end.x - (end.x - start.x) * 0.35} ${end.y}, ${end.x} ${end.y}`;
+  if (route === "free") { const { controlOne, controlTwo } = curveControls(start as Point & { side: string }, end as Point & { side: string }); return `M ${start.x} ${start.y} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${end.x} ${end.y}`; }
   return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
 }
 
@@ -174,9 +197,7 @@ function analyzeDiagram(diagram: Diagram) {
     for (const key of Object.keys(node)) if (!supportedNodeFields.has(key)) warnings.push({ code: "unsupported_field", path: `nodes[${index}].${key}`, message: `${key} is not used by the MCP renderer.` });
     for (const key of Object.keys(node.data ?? {})) if (!supportedDataFields.has(key)) warnings.push({ code: "unsupported_field", path: `nodes[${index}].data.${key}`, message: `${key} is not used by the MCP renderer.` });
     if (node.data?.html === true) warnings.push({ code: "html_ignored", path: `nodes[${index}].data.html`, message: "html ignored (label-only renderer)." });
-    if (node.data?.label && /\r?\n|\\n/.test(String(node.data.label))) warnings.push({ code: "newline_unsupported", path: `nodes[${index}].data.label`, message: "\\n not supported in label; it is replaced with a space. Use a short label or a separate text node." });
-    if (node.parentId || node.extent) warnings.push({ code: "parent_ignored", path: `nodes[${index}]`, message: "parentId+extent ignored by this renderer; provide absolute node positions." });
-    const label = displayLabel(node.data?.label, node.data?.html === true), padding = numberValue(node.data?.padding, 12), availableWidth = numberValue(node.style?.width, numberValue(node.data?.width, 170)) - padding * 2, estimatedWidth = label.length * 7.2 + padding * 2;
+    const label = displayLabel(node.data?.label, node.data?.html === true), padding = numberValue(node.data?.padding, 12), availableWidth = numberValue(node.style?.width, numberValue(node.data?.width, 170)) - padding * 2, estimatedWidth = Math.max(...labelLines(label).map((line) => line.length)) * numberValue(node.data?.fontSize, 14) * 0.52 + padding * 2;
     if (label && estimatedWidth > availableWidth) warnings.push({ code: "text_overflow", path: `nodes[${index}].data.label`, message: `Label is approximately ${Math.ceil(estimatedWidth)}px wide but the node content is only ${Math.max(0, Math.floor(availableWidth))}px wide; shorten the label, enlarge the node, or split the component.` });
   });
   for (let first = 0; first < items.length; first++) for (let second = first + 1; second < items.length; second++) {
@@ -194,9 +215,9 @@ function analyzeDiagram(diagram: Diagram) {
     if (!["none", "single", "double"].includes(arrow)) warnings.push({ code: "invalid_arrow", path: `edges[${index}].data.arrow`, message: `Invalid arrow mode: ${arrow}. Use none, single, or double.` });
     if (edge.markerStart && arrow !== "double") warnings.push({ code: "marker_mismatch", path: `edges[${index}].markerStart`, message: "markerStart requires data.arrow: double; omit it for none or single." });
     if (edge.markerEnd && arrow === "none") warnings.push({ code: "marker_mismatch", path: `edges[${index}].markerEnd`, message: "markerEnd is not used when data.arrow is none." });
-    const start = source ? handlePoint(source, edge.sourceHandle, false) : { x: 0, y: 0, side: "top" }, end = target ? handlePoint(target, edge.targetHandle, true) : { x: 0, y: 0, side: "top" }, points = routePoints(start, end, route);
+    const start = source ? offsetPoint(handlePoint(source, edge.sourceHandle, false), 8) : { x: 0, y: 0, side: "top" }, end = target ? offsetPoint(handlePoint(target, edge.targetHandle, true), 8) : { x: 0, y: 0, side: "top" }, points = routePoints(start, end, route);
     const rawAt = data.labelAt, at = typeof rawAt === "number" ? Math.max(0, Math.min(1, rawAt)) : rawAt === "source" ? 0.2 : rawAt === "target" ? 0.8 : 0.5;
-    const anchor = pointOnRoute(points, at), label = displayLabel(data.label, data.labelHtml === true), labelWidth = Math.min(220, Math.max(0, label.length * 6.2 + 14)), labelBox = { x: anchor.x - labelWidth / 2, y: anchor.y - 10, width: labelWidth, height: label ? 20 : 0 };
+    const anchor = pointOnRoute(points, at), label = displayLabel(data.label, data.labelHtml === true), labelWidth = Math.min(220, Math.max(0, Math.max(...labelLines(label).map((line) => line.length)) * 6.2 + 14)), labelBox = { x: anchor.x - labelWidth / 2, y: anchor.y - (label ? labelLines(label).length * 10 : 0), width: labelWidth, height: label ? labelLines(label).length * 20 : 0 };
     if (label) for (const item of items) if (rectsOverlap(labelBox, item.box, 12)) warnings.push({ code: "label_overlap", path: `edges[${index}].data.label`, message: `Label overlaps node ${item.node.id}; move it with data.labelAt, shorten it, or move the node.` });
     for (const item of items) if (item.node.id !== edge.source && item.node.id !== edge.target && points.slice(1).some((point, pointIndex) => segmentHitsBox(points[pointIndex], point, item.box))) warnings.push({ code: "route_overlap", path: `edges[${index}]`, message: `Route intersects node ${item.node.id}; change handles, route, or node position.` });
     return { id: edge.id ?? `${edge.source}-${edge.target}`, source: edge.source, target: edge.target, route, points, start, end, label: label ? { text: label, anchor, box: labelBox, at, capacityChars: Math.floor(Math.max(0, labelWidth - 14) / 6.2), capacityHint: "approximately 14 characters per 100px at the default font" } : null };
@@ -208,20 +229,25 @@ function renderSvg(diagram: Diagram, geometry: ReturnType<typeof analyzeDiagram>
   const items = flattenNodes(diagram), padding = 48, maxX = Math.max(...items.map((item) => item.position.x + item.width), 720), maxY = Math.max(...items.map((item) => item.position.y + item.height), 480), minX = Math.min(...items.map((item) => item.position.x), 0), minY = Math.min(...items.map((item) => item.position.y), 0), width = Math.ceil(maxX - minX + padding * 2), height = Math.ceil(maxY - minY + padding * 2), tx = padding - minX, ty = padding - minY;
   const defs = `<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="context-stroke"/></marker></defs>`;
   const edgeSvg = geometry.edges.map((edge) => {
-    const data = diagram.edges.find((item) => (item.id ?? `${item.source}-${item.target}`) === edge.id)?.data ?? {}, stroke = safeColor(data.stroke, "#27576B"), route = edge.route, start = edge.start, end = edge.end, path = routePath(start, end, route), arrow = stringValue(data.arrow, "single"), dash = data.dashed ? ` stroke-dasharray="${numberValue(data.dash, 6)} ${numberValue(data.gap, 5)}"` : "", labelDirection = stringValue(data.labelDirection, "horizontal"), angle = labelDirection === "vertical" ? 90 : labelDirection === "along" ? Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI : 0, label = edge.label ? `<text x="${edge.label.anchor.x}" y="${edge.label.anchor.y}" text-anchor="middle" class="edge-label" transform="rotate(${angle} ${edge.label.anchor.x} ${edge.label.anchor.y})">${escapeXml(edge.label.text)}</text>` : "";
+    const data = diagram.edges.find((item) => (item.id ?? `${item.source}-${item.target}`) === edge.id)?.data ?? {}, stroke = safeColor(data.stroke, "#27576B"), route = edge.route, start = edge.start, end = edge.end, path = routePath(start, end, route), arrow = stringValue(data.arrow, "single"), dash = data.dashed ? ` stroke-dasharray="${numberValue(data.dash, 6)} ${numberValue(data.gap, 5)}"` : "", labelDirection = stringValue(data.labelDirection, "horizontal"), angle = labelDirection === "vertical" ? 90 : labelDirection === "along" ? Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI : 0, label = edge.label ? renderText(edge.label.text, edge.label.anchor.x, edge.label.anchor.y, "middle", "font-family=monospace font-size=11px", "#111111", 1, 14, "edge-label").replace("<text ", `<text transform="rotate(${angle} ${edge.label.anchor.x} ${edge.label.anchor.y})" `) : "";
     return `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="${numberValue(data.width, 1.5)}"${dash} ${arrow === "single" || arrow === "double" ? "marker-end=\"url(#arrow)\"" : ""}${arrow === "double" ? " marker-start=\"url(#arrow)\"" : ""}/>${label}`;
   }).join("");
   const nodeSvg = items.sort((a, b) => numberValue(a.node.zIndex, 0) - numberValue(b.node.zIndex, 0)).map(({ node, position, width: nodeWidth, height: nodeHeight }) => { const data = node.data ?? {}, kind = stringValue(data.kind, "rounded"), fill = safeColor(data.fill, "#DDF4FF"), border = safeColor(data.border, "#5B9DBB"), textColor = safeColor(data.textColor, "#173746"), radius = kind === "ellipse" ? nodeHeight / 2 : numberValue(data.radius, 8), borderWidth = numberValue(data.borderWidth, 1), borderStyle = stringValue(data.borderStyle, "solid"), style = `fill-opacity="${numberValue(data.fillOpacity, 100) / 100}" stroke-opacity="${numberValue(data.borderOpacity, 100) / 100}"`, shape = kind === "ellipse" ? `<ellipse cx="${position.x + nodeWidth / 2}" cy="${position.y + nodeHeight / 2}" rx="${nodeWidth / 2}" ry="${nodeHeight / 2}" fill="${fill}" stroke="${border}" stroke-width="${borderWidth}" stroke-dasharray="${borderStyle === "dashed" ? `${numberValue(data.dashLength, 8)} ${numberValue(data.dashGap, 5)}` : "none"}" ${style}/>` : kind === "diamond" ? `<polygon points="${position.x + nodeWidth / 2},${position.y} ${position.x + nodeWidth},${position.y + nodeHeight / 2} ${position.x + nodeWidth / 2},${position.y + nodeHeight} ${position.x},${position.y + nodeHeight / 2}" fill="${fill}" stroke="${border}" stroke-width="${borderWidth}" ${style}/>` : `<rect x="${position.x}" y="${position.y}" width="${nodeWidth}" height="${nodeHeight}" rx="${radius}" fill="${kind === "text" ? "transparent" : fill}" stroke="${kind === "text" ? "transparent" : border}" stroke-width="${kind === "text" ? 0 : borderWidth}" stroke-dasharray="${borderStyle === "dashed" ? `${numberValue(data.dashLength, 8)} ${numberValue(data.dashGap, 5)}` : "none"}" ${style}/>`;
-    const label = escapeXml(displayLabel(data.label, data.html === true)), isFrame = kind === "container", align = isFrame ? "start" : stringValue(data.align, "center"), labelX = isFrame ? position.x + numberValue(data.padding, 12) : align === "left" ? position.x + numberValue(data.padding, 12) : align === "right" ? position.x + nodeWidth - numberValue(data.padding, 12) : position.x + nodeWidth / 2, vertical = isFrame ? "top" : stringValue(data.vertical, "center"), labelY = isFrame ? position.y + 22 : vertical === "top" ? position.y + numberValue(data.padding, 12) + numberValue(data.fontSize, 14) : vertical === "bottom" ? position.y + nodeHeight - numberValue(data.padding, 12) : position.y + nodeHeight / 2, anchor = align === "left" ? "start" : align === "right" ? "end" : "middle", font = `font-family="${escapeXml(stringValue(data.fontFamily, "Arial"))}" font-size="${numberValue(data.fontSize, 14)}" font-weight="${numberValue(data.fontWeight, 600)}" fill-opacity="${numberValue(data.textOpacity, 100) / 100}"`;
+    const label = displayLabel(data.label, data.html === true), isFrame = kind === "container", align = isFrame ? "start" : stringValue(data.align, "center"), labelX = isFrame ? position.x + numberValue(data.padding, 12) : align === "left" ? position.x + numberValue(data.padding, 12) : align === "right" ? position.x + nodeWidth - numberValue(data.padding, 12) : position.x + nodeWidth / 2, vertical = isFrame ? "top" : stringValue(data.vertical, "center"), labelY = isFrame ? position.y + 22 : vertical === "top" ? position.y + numberValue(data.padding, 12) + numberValue(data.fontSize, 14) : vertical === "bottom" ? position.y + nodeHeight - numberValue(data.padding, 12) : position.y + nodeHeight / 2, anchor = align === "left" ? "start" : align === "right" ? "end" : "middle", font = `font-family="${escapeXml(stringValue(data.fontFamily, "Arial"))}" font-size="${numberValue(data.fontSize, 14)}" font-weight="${numberValue(data.fontWeight, 600)}"`;
     const imagePosition = stringValue(data.imagePosition, "left"), imageSize = Math.min(nodeWidth - 20, nodeHeight - 20, numberValue(data.imageSize, 42)), imageX = imagePosition === "right" ? position.x + nodeWidth - imageSize - 10 : imagePosition === "center" ? position.x + (nodeWidth - imageSize) / 2 : position.x + 10, imageY = imagePosition === "bottom" ? position.y + nodeHeight - imageSize - 10 : imagePosition === "center" ? position.y + (nodeHeight - imageSize) / 2 : position.y + 10, image = data.imageUrl ? `<image href="${escapeXml(data.imageUrl)}" x="${imageX}" y="${imageY}" width="${imageSize}" height="${imageSize}" opacity="${numberValue(data.imageOpacity, 100) / 100}" preserveAspectRatio="${stringValue(data.imageFit, "contain") === "cover" ? "xMidYMid slice" : stringValue(data.imageFit, "contain") === "fill" ? "none" : "xMidYMid meet"}"/>` : "";
-    return `${shape}${image}<text x="${labelX}" y="${labelY}" text-anchor="${anchor}" dominant-baseline="middle" ${font} class="node-label">${label}</text>`; }).join("");
-  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><style>.edge-label{font:11px monospace;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}</style>${defs}<g transform="translate(${tx} ${ty})">${edgeSvg}${nodeSvg}</g></svg>`, width, height };
+    return `${shape}${image}${renderText(label, labelX, labelY, anchor, font, textColor, numberValue(data.textOpacity, 100) / 100, numberValue(data.fontSize, 14) * 1.2, "node-label")}`; }).join("");
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><style>.edge-label{paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}</style>${defs}<g transform="translate(${tx} ${ty})">${edgeSvg}${nodeSvg}</g></svg>`, width, height };
 }
 
 function outputPath(filePath: string) {
   const candidate = isAbsolute(filePath) ? filePath : resolve("/tmp", filePath);
   if (!candidate.startsWith("/tmp/")) throw new Error("filePath must be inside /tmp for an unauthenticated server.");
   return candidate;
+}
+
+function renderText(value: string, x: number, y: number, anchor: string, font: string, fill: string, opacity: number, lineHeight: number, className = "") {
+  const lines = labelLines(value), startY = y - (lines.length - 1) * lineHeight / 2;
+  return `<text x="${x}" y="${startY}" text-anchor="${anchor}" dominant-baseline="middle" ${font} fill="${fill}" fill-opacity="${opacity}" class="${className}">${lines.map((line, index) => `<tspan x="${x}" y="${startY + index * lineHeight}">${escapeXml(line)}</tspan>`).join("")}</text>`;
 }
 
 const handler = createMcpHandler(() => {
