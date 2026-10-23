@@ -15,6 +15,21 @@ The final import file must be exactly one JSON object with exactly two top-level
 
 Return valid JSON only when the user asks for an import file. Do not add Markdown, comments, explanations, trailing commas, or JavaScript expressions around the JSON. Every edge reference must resolve to an existing node ID.
 
+## MCP Renderer Contract v1.1
+
+When using Archboard through the MCP server, use the MCP contract below rather than assuming that every browser-editor field is rendered identically.
+
+- MCP nodes use absolute canvas coordinates. `parentId` and `extent: "parent"` are ignored by the MCP renderer and produce validation warnings. Place Frame children with their absolute canvas positions.
+- MCP labels are plain text. `html: true` is ignored and produces a warning.
+- MCP labels are single-line. Literal `\n` or actual newline characters are replaced with a space and produce a warning. Use short labels or separate `text` nodes for multiline explanations.
+- Frame labels render at the top-left with padding in MCP output. Ordinary node labels remain centered.
+- Use MCP `mode: "validate"` before rendering when accuracy matters. It returns `valid`, per-field warnings, node bounding boxes, computed edge points, label anchor points, label rectangles, and overlap warnings without creating an image.
+- Use MCP `format: "png"` for the default image. `filePath` writes the artifact to `/tmp` and returns `{ "path", "width", "height" }` metadata. `png_bytes: "base64"` also returns PNG image content.
+- Use MCP `layout: "auto"` for deterministic rank layout. Use `layoutHints.rankDirection: "LR"` or `"TB"`; manual `position` values remain the override with `layout: "manual"`.
+- MCP incremental operations are `add_node`, `move_node`, `update_node`, `remove_node`, `add_edge`, `update_edge`, and `remove_edge`.
+
+Do not send unsupported browser-only assumptions to the MCP renderer. Always resolve validation warnings before asking for a final image.
+
 ## Node Schema
 
 Every node uses this base structure:
@@ -250,6 +265,7 @@ Every connector should use this structure:
 - `data.dashed`: boolean.
 - `data.dash` and `data.gap`: dash and gap lengths when dashed.
 - `data.label`: optional plain-text connector label. Use `\n` for multiline labels.
+- `data.labelAt`: optional label position: `"source"`, `"mid"`, `"target"`, or a number from `0` to `1`. MCP uses this to move the label along the route.
 - `data.labelDirection`: `horizontal`, `along`, or `vertical`.
 - `data.labelHtml`: `false` unless safe formatting is intentionally required.
 
@@ -497,3 +513,24 @@ Use node dimensions that match the text. For ordinary components, start around `
 - Long labels are shortened or split with `\n`; explanatory prose is moved to a text node.
 - Images and icons are absent unless requested or explicitly required; image nodes retain readable labels.
 - JSON has no comments, trailing commas, undefined values, or duplicate IDs.
+
+## MCP Tool Request Options
+
+The MCP tool accepts the diagram plus these optional fields:
+
+```json
+{
+  "diagram": { "nodes": [], "edges": [] },
+  "mode": "validate",
+  "format": "png",
+  "filePath": "/tmp/architecture.png",
+  "png_bytes": "base64",
+  "layout": "manual",
+  "layoutHints": { "rankDirection": "LR" },
+  "operations": [
+    { "op": "move_node", "id": "api", "x": 420, "y": 180 }
+  ]
+}
+```
+
+`mode: "validate"` is the cheapest accuracy loop. Inspect every warning before rendering. Geometry output reports each node `bbox`, each edge's `points`, `start`, `end`, and the label's `anchor`, `box`, normalized `at` value, `capacityChars`, and capacity hint. A `label_overlap` warning means the label rectangle intersects a node with clearance; fix it with `labelAt`, shorter text, a different route, or more node spacing.
