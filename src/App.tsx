@@ -568,8 +568,8 @@ function SmartEdge({
         strokeWidth={16}
         className="edge-hit-area"
       />
-      {data?.arrow !== "none" && <EdgeLabelRenderer><div className="edge-arrow-overlay" style={{ left: lineTarget.x, top: lineTarget.y, background: data?.stroke, transform: `translate(-16px, -50%) rotate(${endAngle}deg)` }} /></EdgeLabelRenderer>}
-      {data?.arrow === "double" && <EdgeLabelRenderer><div className="edge-arrow-overlay" style={{ left: lineSource.x, top: lineSource.y, background: data?.stroke, transform: `translate(-16px, -50%) rotate(${startAngle}deg)` }} /></EdgeLabelRenderer>}
+      {data?.arrow !== "none" && <polygon className="edge-arrow" points="0,0 -12,-6 -12,6" transform={`translate(${lineTarget.x} ${lineTarget.y}) rotate(${endAngle})`} fill={data?.stroke} stroke={data?.stroke} strokeWidth="1" />}
+      {data?.arrow === "double" && <polygon className="edge-arrow" points="0,0 -12,-6 -12,6" transform={`translate(${lineSource.x} ${lineSource.y}) rotate(${startAngle})`} fill={data?.stroke} stroke={data?.stroke} strokeWidth="1" />}
       {data?.label && (
         <EdgeLabelRenderer>
           <div
