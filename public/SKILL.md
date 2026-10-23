@@ -25,6 +25,7 @@ When using Archboard through the MCP server, use the MCP contract below rather t
 - Frame labels render at the top-left with padding in MCP output. Ordinary node labels remain centered.
 - Use MCP `mode: "validate"` before rendering when accuracy matters. It returns `valid`, per-field warnings, node bounding boxes, computed edge points, label anchor points, label rectangles, and overlap warnings without creating an image.
 - Use MCP `format: "png"` for the default image. `filePath` writes the artifact to `/tmp` and returns `{ "path", "width", "height" }` metadata. `png_bytes: "base64"` also returns PNG image content.
+- MCP `strict` defaults to `true`. Rendering is blocked when any warning exists; the tool returns a repair report with warnings and geometry instead of an inaccurate image. Set `strict: false` only when an intentionally imperfect draft is needed.
 - Use MCP `layout: "auto"` for deterministic rank layout. Use `layoutHints.rankDirection: "LR"` or `"TB"`; manual `position` values remain the override with `layout: "manual"`.
 - MCP incremental operations are `add_node`, `move_node`, `update_node`, `remove_node`, `add_edge`, `update_edge`, and `remove_edge`.
 
@@ -525,6 +526,7 @@ The MCP tool accepts the diagram plus these optional fields:
   "format": "png",
   "filePath": "/tmp/architecture.png",
   "png_bytes": "base64",
+  "strict": true,
   "layout": "manual",
   "layoutHints": { "rankDirection": "LR" },
   "operations": [
@@ -533,4 +535,4 @@ The MCP tool accepts the diagram plus these optional fields:
 }
 ```
 
-`mode: "validate"` is the cheapest accuracy loop. Inspect every warning before rendering. Geometry output reports each node `bbox`, each edge's `points`, `start`, `end`, and the label's `anchor`, `box`, normalized `at` value, `capacityChars`, and capacity hint. A `label_overlap` warning means the label rectangle intersects a node with clearance; fix it with `labelAt`, shorter text, a different route, or more node spacing.
+`mode: "validate"` is the cheapest accuracy loop. Inspect every warning before rendering. Geometry output reports each node `bbox`, each edge's `points`, `start`, `end`, and the label's `anchor`, `box`, normalized `at` value, `capacityChars`, and capacity hint. `text_overflow` means a node label is wider than its content area. `node_overlap` means two component boxes intersect. A `label_overlap` warning means the label rectangle intersects a node with clearance; fix it with `labelAt`, shorter text, a different route, or more node spacing.

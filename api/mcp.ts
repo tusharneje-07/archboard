@@ -34,7 +34,7 @@ const serverInstructions = `You are connected to Archboard, a local-first system
 
 Archboard supports architecture shapes, Frames, editable labels, themes, colors, opacity, four-sided handles, straight/orthogonal/free connectors, connector labels, dashed lines, images, icon URLs, layers, zoom/pan, presentation mode, JSON import/editing, and PNG/SVG/JPG/JSON export. The MCP renderer is a server-side artifact renderer and has a deliberately smaller, explicit contract.
 
-Use the generate_architecture_diagram tool for architecture diagrams, system designs, service maps, and visual explanations. The tool accepts a complete diagram or a complete diagram plus incremental operations. It returns PNG by default. Use mode: "validate" before rendering when geometry or collisions matter.
+Use the generate_architecture_diagram tool for architecture diagrams, system designs, service maps, and visual explanations. The tool accepts a complete diagram or a complete diagram plus incremental operations. It returns PNG by default, but strict validation is enabled by default: if any warning exists, the tool returns a repair report instead of a misleading image. Fix every warning and call the tool again. You may use mode: "validate" first for a cheap geometry-only pass.
 
 MCP renderer contract: every node must use absolute canvas coordinates. Do not use parentId or extent for MCP input; they are reported as unsupported warnings and are not used for layout. Frame nodes still work as visual boundaries, but child nodes must have their own absolute position. Labels are plain text only: html is ignored, and literal \\n in labels is replaced with a space and reported as a warning. Use short single-line labels, or separate text nodes for multiline explanation. Frame titles render top-left with padding.
 
@@ -48,7 +48,7 @@ Images and icons are optional. Do not add them unless the user explicitly reques
 
 layout: "auto" provides a deterministic lightweight DAG layout. Use layoutHints.rankDirection "LR" or "TB", optional clusterBy data key, and optional edgePriority. Manual coordinates remain the override when layout is "manual".
 
-Output options: format is png, jpg, svg, or json; mode is render or validate; filePath writes the artifact on the server and returns path, width, and height metadata; png_bytes: "base64" includes PNG bytes in the tool result.`;
+Output options: format is png, jpg, svg, or json; mode is render or validate; strict defaults to true and blocks inaccurate output when warnings exist; filePath writes the artifact on the server and returns path, width, and height metadata; png_bytes: "base64" includes PNG bytes in the tool result.`;
 
 const inputSchema = z.object({
   diagram: z.union([
@@ -66,6 +66,7 @@ const inputSchema = z.object({
     edgePriority: z.record(z.string(), z.number()).optional(),
   }).optional(),
   operations: z.array(z.record(z.string(), z.unknown())).optional().describe("Optional incremental operations: add_node, move_node, update_node, remove_node, add_edge, update_edge, remove_edge."),
+  strict: z.boolean().default(true).describe("When true, return validation errors instead of an image if any warning exists."),
 });
 
 const supportedNodeFields = new Set(["id", "type", "position", "parentId", "extent", "style", "zIndex", "data"]);
@@ -161,7 +162,13 @@ function analyzeDiagram(diagram: Diagram) {
     if (node.data?.html === true) warnings.push({ code: "html_ignored", path: `nodes[${index}].data.html`, message: "html ignored (label-only renderer)." });
     if (node.data?.label && /\r?\n|\\n/.test(String(node.data.label))) warnings.push({ code: "newline_unsupported", path: `nodes[${index}].data.label`, message: "\\n not supported in label; it is replaced with a space. Use a short label or a separate text node." });
     if (node.parentId || node.extent) warnings.push({ code: "parent_ignored", path: `nodes[${index}]`, message: "parentId+extent ignored by this renderer; provide absolute node positions." });
+    const label = displayLabel(node.data?.label, node.data?.html === true), padding = numberValue(node.data?.padding, 12), availableWidth = numberValue(node.style?.width, numberValue(node.data?.width, 170)) - padding * 2, estimatedWidth = label.length * 7.2 + padding * 2;
+    if (label && estimatedWidth > availableWidth) warnings.push({ code: "text_overflow", path: `nodes[${index}].data.label`, message: `Label is approximately ${Math.ceil(estimatedWidth)}px wide but the node content is only ${Math.max(0, Math.floor(availableWidth))}px wide; shorten the label, enlarge the node, or split the component.` });
   });
+  for (let first = 0; first < items.length; first++) for (let second = first + 1; second < items.length; second++) {
+    const a = items[first], b = items[second];
+    if (a.node.data?.kind !== "container" && b.node.data?.kind !== "container" && rectsOverlap(a.box, b.box)) warnings.push({ code: "node_overlap", path: "nodes", message: `Nodes ${a.node.id} and ${b.node.id} overlap; move them apart before rendering.` });
+  }
   const edgeGeometry = diagram.edges.map((edge, index) => {
     for (const key of Object.keys(edge)) if (!supportedEdgeFields.has(key)) warnings.push({ code: "unsupported_field", path: `edges[${index}].${key}`, message: `${key} is not used by the MCP renderer.` });
     for (const key of Object.keys(edge.data ?? {})) if (!supportedEdgeDataFields.has(key)) warnings.push({ code: "unsupported_field", path: `edges[${index}].data.${key}`, message: `${key} is not used by the MCP renderer.` });
@@ -171,7 +178,7 @@ function analyzeDiagram(diagram: Diagram) {
     const source = byId.get(edge.source), target = byId.get(edge.target), data = edge.data ?? {}, route = stringValue(data.route, "straight"), start = source ? handlePoint(source, edge.sourceHandle, false) : { x: 0, y: 0, side: "top" }, end = target ? handlePoint(target, edge.targetHandle, true) : { x: 0, y: 0, side: "top" }, points = routePoints(start, end, route);
     const rawAt = data.labelAt, at = typeof rawAt === "number" ? Math.max(0, Math.min(1, rawAt)) : rawAt === "source" ? 0.2 : rawAt === "target" ? 0.8 : 0.5;
     const anchor = pointOnRoute(points, at), label = displayLabel(data.label, data.labelHtml === true), labelWidth = Math.min(220, Math.max(0, label.length * 6.2 + 14)), labelBox = { x: anchor.x - labelWidth / 2, y: anchor.y - 10, width: labelWidth, height: label ? 20 : 0 };
-    if (label) for (const item of items) if (item.node.id !== edge.source && item.node.id !== edge.target && rectsOverlap(labelBox, item.box, 12)) warnings.push({ code: "label_overlap", path: `edges[${index}].data.label`, message: `Label overlaps node ${item.node.id}; move it with data.labelAt, shorten it, or move the node.` });
+    if (label) for (const item of items) if (rectsOverlap(labelBox, item.box, 12)) warnings.push({ code: "label_overlap", path: `edges[${index}].data.label`, message: `Label overlaps node ${item.node.id}; move it with data.labelAt, shorten it, or move the node.` });
     for (const item of items) if (item.node.id !== edge.source && item.node.id !== edge.target && points.slice(1).some((point, pointIndex) => segmentHitsBox(points[pointIndex], point, item.box))) warnings.push({ code: "route_overlap", path: `edges[${index}]`, message: `Route intersects node ${item.node.id}; change handles, route, or node position.` });
     return { id: edge.id ?? `${edge.source}-${edge.target}`, source: edge.source, target: edge.target, route, points, start, end, label: label ? { text: label, anchor, box: labelBox, at, capacityChars: Math.floor(Math.max(0, labelWidth - 14) / 6.2), capacityHint: "approximately 14 characters per 100px at the default font" } : null };
   });
@@ -197,12 +204,13 @@ function outputPath(filePath: string) {
 
 const handler = createMcpHandler(() => {
   const server = new McpServer({ name: "archboard", version: "1.1.0" }, { capabilities: { tools: {} }, instructions: serverInstructions });
-  server.registerTool("generate_architecture_diagram", { description: "Validate, auto-layout, render, or incrementally edit an Archboard diagram. Returns geometry and warnings in validate mode. Returns PNG by default. Supports filePath, png_bytes: base64, labelAt, operations, and layout: auto.", inputSchema }, async ({ diagram, format, mode, filePath, png_bytes, layout, layoutHints, operations }) => {
+  server.registerTool("generate_architecture_diagram", { description: "Validate, auto-layout, render, or incrementally edit an Archboard diagram. Strict validation is enabled by default and returns a repair report instead of an inaccurate image when nodes, labels, or routes overlap. Supports geometry, filePath, png_bytes: base64, labelAt, operations, and layout: auto.", inputSchema }, async ({ diagram, format, mode, filePath, png_bytes, layout, layoutHints, operations, strict }) => {
     try {
       let normalized = applyOperations(normalizeDiagram(diagram), operations);
       if (layout === "auto") normalized = applyAutoLayout(normalized, layoutHints);
       const analysis = analyzeDiagram(normalized);
       if (mode === "validate") return { content: [{ type: "text", text: JSON.stringify({ valid: analysis.warnings.length === 0, warnings: analysis.warnings, geometry: analysis.geometry, diagram: normalized }, null, 2) }] };
+      if (strict && analysis.warnings.length) return { isError: true, content: [{ type: "text", text: JSON.stringify({ valid: false, message: "Rendering blocked by validation warnings. Fix every warning and retry.", warnings: analysis.warnings, geometry: analysis.geometry, diagram: normalized }, null, 2) }] };
       const rendered = renderSvg(normalized, analysis.geometry);
       if (format === "json") return { content: [{ type: "text", text: JSON.stringify({ diagram: normalized, warnings: analysis.warnings, width: rendered.width, height: rendered.height }, null, 2) }] };
       const source = new TextEncoder().encode(rendered.svg);
