@@ -117,6 +117,50 @@ Image nodes use the normal node schema plus these properties:
 
 When an image has no label, use `imagePosition: "center"` to center it in the node. For a logo with text beside it, use `left` or `right`. For a logo above or below text, use `top` or `bottom`.
 
+### Image and icon policy
+
+Images are optional visual aids, not a requirement for architecture diagrams. Do not add images merely to make a diagram look richer.
+
+- Add an image only when the user explicitly requests images, logos, icons, thumbnails, or visual assets.
+- Add an image when an icon is part of the stated diagram requirement, for example "show the AWS logo" or "use service icons".
+- Do not add images for ordinary components when the user has not requested them. A well-styled shape with a clear label is preferred.
+- Never replace a required component label with an icon alone. Keep the label unless the user explicitly wants an icon-only node.
+- Prefer a stable HTTPS SVG or PNG URL. Archboard renders `imageUrl` with a normal image element.
+- Do not invent a URL that is likely to be unavailable. Use a known provider URL or omit the image.
+- If a remote image is unavailable, the diagram must still communicate its meaning through `label`, `kind`, color, and shape.
+
+Examples of optional icon URLs:
+
+```json
+{
+  "kind": "image",
+  "label": "React web client",
+  "imageUrl": "https://cdn.simpleicons.org/react/61DAFB",
+  "imagePosition": "left",
+  "imageFit": "contain",
+  "imageSize": 30,
+  "imageOpacity": 100,
+  "imageRadius": 4,
+  "imageSource": "url"
+}
+```
+
+```json
+{
+  "kind": "image",
+  "label": "PostgreSQL",
+  "imageUrl": "https://cdn.simpleicons.org/postgresql/4169E1",
+  "imagePosition": "center",
+  "imageFit": "contain",
+  "imageSize": 55,
+  "imageOpacity": 100,
+  "imageRadius": 4,
+  "imageSource": "url"
+}
+```
+
+Use `imagePosition: "left"` or `"right"` when the label must sit beside the asset. Use `"top"` or `"bottom"` when the asset belongs above or below the label. Use `"center"` for an icon-only or image-dominant node. Keep the image allocation modest so the label remains readable.
+
 ## Frames and Hierarchy
 
 Use `kind: "container"` for Frames and system boundaries.
@@ -309,9 +353,96 @@ Never use `arrow: "single"` with reversed `source` and `target` just to make a v
 
 ### Route modes
 
-- `orthogonal`: preferred for architecture diagrams. Use for left-to-right or top-to-bottom flows.
-- `straight`: preferred for a direct relationship with no routing turns.
-- `free`: rendered as a curved Bezier relationship. Use for feedback loops or relationships that would otherwise cross the main flow.
+- `straight`: the default for a short, direct relationship between two nearby nodes. Use it when the line does not pass through another node or label. It is the least cluttered route and should be preferred whenever it is clear.
+- `orthogonal`: a horizontal/vertical routed line with elbows. Use it only when a direct line would cross a node, when the diagram has a clear grid, or when a long process flow needs to stay aligned to rows and columns. Do not use it automatically for every edge. Too many orthogonal edges create parallel elbows and visual clutter.
+- `free`: a curved Bezier relationship. Use it for feedback loops, return paths, exceptional paths, or relationships that must arc around the primary flow. Use it instead of adding several orthogonal bends around a dense cluster.
+
+### Arrow route selection and anti-clutter rules
+
+Choose the route after placing the nodes, not before. The physical route must support the semantic relationship and must not be used to compensate for poor node placement.
+
+1. Place the primary flow in one direction, normally left-to-right for request flows or top-to-bottom for pipelines.
+2. Use `straight` for a one-to-one connection when the open corridor between the nodes is clear.
+3. Use `orthogonal` only for a connection that needs to leave one side and approach another side while avoiding a shape. Reserve it for the main lanes of a grid.
+4. Use `free` for feedback, retry, error, response, or cross-cutting paths that would otherwise cross the primary lanes.
+5. Do not create an orthogonal edge solely because it looks more architectural. Each elbow consumes space and creates another opportunity to cross a label or shape.
+6. Do not route several unrelated edges through the same tiny corridor. Move nodes apart and give each lane room.
+7. Keep parallel flows in separate horizontal or vertical lanes. Align their source and target handles consistently.
+8. Keep a minimum visual clearance of `24px` between an edge route and any unrelated node. Use more space for a label or a dashed feedback route.
+9. Prefer one edge for one semantic relationship. Do not split one relationship into multiple decorative segments.
+10. Do not add duplicate edges in opposite directions unless the system genuinely has two independently meaningful flows.
+11. If two nodes have a bidirectional relationship, use `double` only when both directions share the same meaning. Use two labeled single edges when request and response need separate labels or routes.
+12. If a route would cross a node, first try moving the node or changing the source/target side. Only then change from `straight` to `orthogonal` or `free`.
+
+Use these layout patterns:
+
+- Linear pipeline: stack nodes vertically or arrange them horizontally; use `straight` or simple `orthogonal` edges in the same lane.
+- Hub and spokes: place the hub centrally, give each spoke its own side or lane, and use `straight` edges where possible. Do not send all spokes through one elbow.
+- Feedback loop: use one `free` edge around the outside of the flow, with a short label placed in the open outer area.
+- External dependency: place the external system in a separate column and use one horizontal `straight` or `orthogonal` lane per dependency.
+- Dense service graph: split the graph into Frames or subdiagrams instead of drawing every low-level relationship on one canvas.
+
+The following is intentionally discouraged because it creates clutter:
+
+```json
+{
+  "data": { "route": "orthogonal", "arrow": "single", "label": "Every tiny internal step" }
+}
+```
+
+Do not label every edge by default. Label only a protocol, data type, important state transition, or user-visible meaning. An unlabeled edge is better than a label that makes the graph unreadable.
+
+## Label Sizing and Collision Avoidance
+
+Every connector label is a physical object with width and height. Treat it as a rectangle that must fit in the open space around its edge. Never place a label by semantic midpoint alone without checking the surrounding nodes.
+
+Archboard renders edge labels with a compact monospace style, `3px` vertical padding, `6px` horizontal padding, a border, and a maximum width of approximately `220px`. Estimate label width before placing it:
+
+- One short line of 10 to 24 characters usually needs about `90px` to `160px`.
+- A line near the `220px` limit must be split with `\n` or shortened.
+- Each additional line increases label height by roughly one text line plus vertical padding.
+- `labelDirection: "horizontal"` is safest for short labels.
+- Use `labelDirection: "along"` only when the edge has enough length and the rotated text will not collide with a node.
+- Use `labelDirection: "vertical"` only for a deliberately vertical lane with generous clearance.
+
+Before finalizing each labeled edge:
+
+1. Estimate the label rectangle from its character count and line count.
+2. Find the edge's label position: midpoint for `straight`, central lane for `orthogonal`, or the open middle of the curve for `free`.
+3. Check that the label rectangle does not intersect the source node, target node, any unrelated node, a Frame title, another label, or another edge's arrowhead.
+4. Keep at least `12px` between a label rectangle and a node border. Use `24px` when the edge is diagonal, dashed, or part of a dense cluster.
+5. If the label collides, shorten it, split it with `\n`, move the nodes, change the edge side, or choose another route. Never leave it overlapping a shape.
+6. If there is no safe label position, remove the label or convert the explanation into a separate `text` node placed in open space.
+
+Good labels are short and specific:
+
+```json
+{
+  "data": {
+    "route": "straight",
+    "arrow": "single",
+    "label": "HTTPS\nJSON",
+    "labelDirection": "horizontal",
+    "labelHtml": false
+  }
+}
+```
+
+Bad labels are long sentences that force a wide box over nearby nodes:
+
+```json
+{
+  "data": {
+    "route": "orthogonal",
+    "arrow": "single",
+    "label": "This service sends the complete request payload to the gateway and waits for the response before continuing",
+    "labelDirection": "horizontal",
+    "labelHtml": false
+  }
+}
+```
+
+Use node dimensions that match the text. For ordinary components, start around `170px` to `220px` wide and `76px` to `110px` high. Increase dimensions for multiline labels rather than allowing text to touch borders. Keep at least `32px` between neighboring node rectangles before adding an edge label. For a label between two nodes, reserve the label width plus `24px` clearance as empty corridor space.
 
 ## Diagram Construction Rules
 
@@ -337,9 +468,12 @@ Never use `arrow: "single"` with reversed `source` and `target` just to make a v
 5. Add edges only after all node IDs and positions are known.
 6. For each edge, write down the semantic direction in plain language, for example `browser -> api`.
 7. Select the source side and target side independently using the handle table above.
-8. Select `single`, `double`, or `none` based on the meaning of the relationship.
-9. Validate JSON syntax, IDs, parent relationships, handles, and arrow direction.
-10. Return only the final `{ "nodes": [], "edges": [] }` JSON object.
+8. Select `straight`, `orthogonal`, or `free` only after checking the open corridor and possible collisions.
+9. Select `single`, `double`, or `none` based on the meaning of the relationship.
+10. Add labels only for information that improves comprehension; estimate each label's rectangle and check collisions.
+11. Add images only when explicitly requested or when an icon is a stated requirement. Otherwise use normal shapes.
+12. Validate JSON syntax, IDs, parent relationships, handles, route choice, label clearance, and arrow direction.
+13. Return only the final `{ "nodes": [], "edges": [] }` JSON object.
 
 ## Preflight Checklist
 
@@ -356,4 +490,10 @@ Never use `arrow: "single"` with reversed `source` and `target` just to make a v
 - `arrow: "single"` points from source to target; `arrow: "double"` is reserved for bidirectional exchange.
 - Marker metadata agrees with `data.arrow`: single has only `markerEnd`, double has both markers, and none has neither.
 - Routes and labels match the intended diagram flow.
+- Straight edges are used when the corridor is clear; orthogonal elbows are not used by default.
+- Every orthogonal edge has a reason: avoiding a shape, following a deliberate grid lane, or preserving a clear flow.
+- Every labeled edge has enough empty space for the estimated label rectangle.
+- No label overlaps a node, Frame title, other label, or arrowhead.
+- Long labels are shortened or split with `\n`; explanatory prose is moved to a text node.
+- Images and icons are absent unless requested or explicitly required; image nodes retain readable labels.
 - JSON has no comments, trailing commas, undefined values, or duplicate IDs.
