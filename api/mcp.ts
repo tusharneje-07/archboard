@@ -149,7 +149,7 @@ function handlePoint(item: FlatNode, handle: string | undefined, target: boolean
 function offsetPoint(point: Point & { side: string }, amount: number): Point & { side: string } {
   const offsets: Record<string, Point> = { left: { x: -amount, y: 0 }, right: { x: amount, y: 0 }, top: { x: 0, y: -amount }, bottom: { x: 0, y: amount } };
   const offset = offsets[point.side] ?? offsets.top;
-  return { x: point.x - offset.x, y: point.y - offset.y, side: point.side };
+  return { x: point.x + offset.x, y: point.y + offset.y, side: point.side };
 }
 
 function curveControls(start: Point & { side: string }, end: Point & { side: string }) {
