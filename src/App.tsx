@@ -520,7 +520,7 @@ function SmartEdge({
     nodes = useDiagram((s) => s.nodes),
     edges = useDiagram((s) => s.edges);
   const outward = (position?: Position) => position === Position.Top ? { x: 0, y: -1 } : position === Position.Bottom ? { x: 0, y: 1 } : position === Position.Left ? { x: -1, y: 0 } : { x: 1, y: 0 };
-  const sourceOutward = outward(sourcePosition), targetOutward = outward(targetPosition), arrowTipGap = 1;
+  const sourceOutward = outward(sourcePosition), targetOutward = outward(targetPosition), arrowTipGap = 0;
   const lineSource = { x: sourceX, y: sourceY }, lineTarget = { x: targetX + targetOutward.x * arrowTipGap, y: targetY + targetOutward.y * arrowTipGap }, midX = lineSource.x + (lineTarget.x - lineSource.x) / 2;
   const curveDistance = Math.max(56, Math.min(150, Math.hypot(lineTarget.x - lineSource.x, lineTarget.y - lineSource.y) * 0.34));
   const controlOne = { x: lineSource.x + sourceOutward.x * curveDistance, y: lineSource.y + sourceOutward.y * curveDistance };
