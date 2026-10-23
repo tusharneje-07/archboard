@@ -525,11 +525,18 @@ function SmartEdge({
   const curveDistance = Math.max(56, Math.min(150, Math.hypot(lineTarget.x - lineSource.x, lineTarget.y - lineSource.y) * 0.34));
   const controlOne = { x: lineSource.x + sourceOutward.x * curveDistance, y: lineSource.y + sourceOutward.y * curveDistance };
   const controlTwo = { x: lineTarget.x + targetOutward.x * curveDistance, y: lineTarget.y + targetOutward.y * curveDistance };
-  const path = data?.route === "orthogonal" ? `M ${lineSource.x} ${lineSource.y} L ${midX} ${lineSource.y} L ${midX} ${lineTarget.y} L ${lineTarget.x} ${lineTarget.y}` : data?.route === "free" ? `M ${lineSource.x} ${lineSource.y} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${lineTarget.x} ${lineTarget.y}` : `M ${lineSource.x} ${lineSource.y} L ${lineTarget.x} ${lineTarget.y}`;
+  const verticalEndpoints = [Position.Top, Position.Bottom].includes(sourcePosition) && [Position.Top, Position.Bottom].includes(targetPosition);
+  const midY = lineSource.y + (lineTarget.y - lineSource.y) / 2;
+  const orthogonalPoints = verticalEndpoints
+    ? [lineSource, { x: lineSource.x, y: midY }, { x: lineTarget.x, y: midY }, lineTarget]
+    : [lineSource, { x: midX, y: lineSource.y }, { x: midX, y: lineTarget.y }, lineTarget];
+  const orthogonalPath = orthogonalPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const path = data?.route === "orthogonal" ? orthogonalPath : data?.route === "free" ? `M ${lineSource.x} ${lineSource.y} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${lineTarget.x} ${lineTarget.y}` : `M ${lineSource.x} ${lineSource.y} L ${lineTarget.x} ${lineTarget.y}`;
   const labelX = data?.route === "orthogonal" ? midX : data?.route === "free" ? (lineSource.x + 2 * controlOne.x + 2 * controlTwo.x + lineTarget.x) / 6 : lineSource.x + (lineTarget.x - lineSource.x) / 2;
   const labelY = data?.route === "orthogonal" ? (lineSource.y + lineTarget.y) / 2 - 8 : data?.route === "free" ? (lineSource.y + 2 * controlOne.y + 2 * controlTwo.y + lineTarget.y) / 6 - 8 : lineSource.y + (lineTarget.y - lineSource.y) / 2 - 8;
-  const endAngle = data?.route === "orthogonal" ? (lineTarget.x >= midX ? 0 : 180) : data?.route === "free" ? Math.atan2(lineTarget.y - controlTwo.y, lineTarget.x - controlTwo.x) * 180 / Math.PI : Math.atan2(lineTarget.y - lineSource.y, lineTarget.x - lineSource.x) * 180 / Math.PI;
-  const startAngle = data?.route === "orthogonal" ? (lineSource.x <= midX ? 180 : 0) : data?.route === "free" ? Math.atan2(lineSource.y - controlOne.y, lineSource.x - controlOne.x) * 180 / Math.PI : endAngle + 180;
+  const orthogonalEnd = orthogonalPoints[orthogonalPoints.length - 1], orthogonalBeforeEnd = orthogonalPoints[orthogonalPoints.length - 2], orthogonalAfterStart = orthogonalPoints[1];
+  const endAngle = data?.route === "orthogonal" ? Math.atan2(orthogonalEnd.y - orthogonalBeforeEnd.y, orthogonalEnd.x - orthogonalBeforeEnd.x) * 180 / Math.PI : data?.route === "free" ? Math.atan2(lineTarget.y - controlTwo.y, lineTarget.x - controlTwo.x) * 180 / Math.PI : Math.atan2(lineTarget.y - lineSource.y, lineTarget.x - lineSource.x) * 180 / Math.PI;
+  const startAngle = data?.route === "orthogonal" ? Math.atan2(orthogonalAfterStart.y - lineSource.y, orthogonalAfterStart.x - lineSource.x) * 180 / Math.PI + 180 : data?.route === "free" ? Math.atan2(lineSource.y - controlOne.y, lineSource.x - controlOne.x) * 180 / Math.PI : endAngle + 180;
   const labelAngle = data?.labelDirection === "vertical" ? 90 : data?.labelDirection === "along" ? Math.atan2(lineTarget.y - lineSource.y, lineTarget.x - lineSource.x) * 180 / Math.PI : 0;
   const arrow = (x: number, y: number, angle: number) => (
     <polygon
