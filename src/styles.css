@@ -817,6 +817,13 @@ h2 {
 .import-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid #e5ecec; }
 .import-dialog-head h2 { margin: 4px 0 0; color: #1d3f4c; font-size: 21px; letter-spacing: -.5px; }
 .import-dialog > .helper { margin: 14px 0; }
+.import-drop-zone { display: grid; justify-items: center; gap: 5px; margin-bottom: 10px; padding: 18px; color: #6c858b; background: #f7fbfb; border: 1px dashed #a9cbd0; border-radius: 6px; text-align: center; transition: border-color .15s, background .15s, color .15s; }
+.import-drop-zone svg { color: #1c8da5; }
+.import-drop-zone strong { color: #36545d; font-size: 12px; }
+.import-drop-zone span { font: 10px "DM Mono", monospace; }
+.import-drop-zone.is-dragging { color: #075d73; background: #e8f5f7; border-color: #1c8da5; }
+.import-drop-zone { cursor: pointer; }
+.import-file-input { display: none; }
 .import-editor { min-height: 0; }
 .import-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 14px; }
 .import-actions > button { padding: 8px 11px; color: #64777f; border: 1px solid #d5e1e3; font-size: 11px; }

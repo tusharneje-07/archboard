@@ -17,6 +17,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  reconnectEdge,
   SelectionMode,
   useEdgesState,
   useNodesState,
@@ -959,7 +960,9 @@ function Editor({ project }: { project: Project }) {
     [exportQuality, setExportQuality] = useState(90),
     [exportDpi, setExportDpi] = useState(144),
     [exportPreview, setExportPreview] = useState(""),
-    [importOpen, setImportOpen] = useState(false),
+     [importOpen, setImportOpen] = useState(false),
+     [importDragActive, setImportDragActive] = useState(false),
+     [importFileName, setImportFileName] = useState(""),
     [importDraft, setImportDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
     [importError, setImportError] = useState(""),
      [codeDraft, setCodeDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
@@ -1035,9 +1038,11 @@ function Editor({ project }: { project: Project }) {
   const openImportDialog = () => {
     setImportDraft(diagramJson());
     setImportError("");
+    setImportFileName("");
     setImportOpen(true);
   };
   const readImportFile = (file: File) => {
+    setImportFileName(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       setImportDraft(String(reader.result));
@@ -1329,6 +1334,10 @@ function Editor({ project }: { project: Project }) {
     },
     [setEdges, snapshot],
   );
+  const onReconnect = useCallback((oldEdge: Edge<EdgeData>, connection: Connection) => {
+    snapshot();
+    setEdges((items) => reconnectEdge(oldEdge, connection, items, { shouldReplaceId: false }));
+  }, [setEdges, snapshot]);
   const updateSelected = (
     patch: Partial<NodeData> & { style?: React.CSSProperties },
   ) => {
@@ -1710,8 +1719,11 @@ function Editor({ project }: { project: Project }) {
                   snapshot();
                 onNodesChange(changes);
               }}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
+               onEdgesChange={onEdgesChange}
+               onConnect={onConnect}
+               onReconnect={onReconnect}
+               edgesReconnectable
+               reconnectRadius={24}
                onNodeDragStop={handleNodeDragStop}
                onNodeContextMenu={(event, node) => {
                  event.preventDefault();
@@ -1862,11 +1874,17 @@ function Editor({ project }: { project: Project }) {
        )}
        {importOpen && <div className="import-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setImportOpen(false)}>
          <section className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
-           <div className="import-dialog-head"><div><span className="eyebrow">Diagram source</span><h2 id="import-title">Import JSON</h2></div><button className="quiet" onClick={() => setImportOpen(false)}><X size={17} /></button></div>
-           <p className="helper">Paste an Archboard diagram object or choose a `.json` file. It must contain `nodes` and `edges` arrays.</p>
-           <textarea className="diagram-code-editor import-editor" value={importDraft} onChange={(event) => setImportDraft(event.target.value)} spellCheck={false} aria-label="Import diagram JSON" />
-           {importError && <p className="code-error">{importError}</p>}
-           <div className="import-actions"><label className="file-picker">Choose JSON file<input type="file" accept=".json,application/json" onChange={(event) => event.target.files?.[0] && readImportFile(event.target.files[0])} /></label><button onClick={() => setImportOpen(false)}>Cancel</button><button className="primary" onClick={() => applyDiagramJson(importDraft, true)}><Upload size={15} /> Upload JSON</button></div>
+            <div className="import-dialog-head"><div><span className="eyebrow">Diagram source</span><h2 id="import-title">Import JSON</h2></div><button className="quiet" onClick={() => setImportOpen(false)}><X size={17} /></button></div>
+            <p className="helper">Paste an Archboard diagram object or choose a `.json` file. It must contain `nodes` and `edges` arrays.</p>
+            <label className={`import-drop-zone${importDragActive ? " is-dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setImportDragActive(true); }} onDragLeave={() => setImportDragActive(false)} onDrop={(event) => { event.preventDefault(); setImportDragActive(false); const file = event.dataTransfer.files[0]; if (file) readImportFile(file); }}>
+              <Upload size={22} />
+              <strong>{importFileName || "Drop a JSON file here"}</strong>
+              <span>{importFileName ? "File loaded into the code preview" : "or click to browse for a JSON file"}</span>
+              <input className="import-file-input" type="file" accept=".json,application/json" onChange={(event) => event.target.files?.[0] && readImportFile(event.target.files[0])} />
+            </label>
+            <textarea className="diagram-code-editor import-editor" value={importDraft} onChange={(event) => setImportDraft(event.target.value)} spellCheck={false} aria-label="Import diagram JSON" />
+            {importError && <p className="code-error">{importError}</p>}
+            <div className="import-actions"><button onClick={() => setImportOpen(false)}>Cancel</button><button className="primary" onClick={() => applyDiagramJson(importDraft, true)}><Upload size={15} /> Upload JSON</button></div>
          </section>
        </div>}
     </main>
