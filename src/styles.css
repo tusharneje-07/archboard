@@ -200,13 +200,13 @@ button {
 .project-dialog-actions button:hover { background: #f5f9f9; }
 .project-dialog-actions .primary { color: #fff; background: #00546d; border-color: #00546d; }
 .project-dialog-actions .danger { color: #fff; background: #b34d4d; border-color: #b34d4d; }
-.code-panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; height: calc(100vh - 170px); }
+.code-panel { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; height: auto; }
 .code-panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
 .code-panel-head strong { display: block; margin-top: 4px; color: #244754; font-size: 14px; }
 .code-panel-head .quiet { padding: 4px 6px; color: #4e7d88; font: 10px "DM Mono"; border: 1px solid #d1e1e3; border-radius: 3px; }
 .diagram-code-editor { width: 100%; min-height: 0; flex: 1; resize: none; padding: 12px; color: #294957; background: #f7fbfb; border: 1px solid #c6dadd; border-radius: 4px; outline: none; font: 11px/1.55 "DM Mono", monospace; tab-size: 2; }
 .diagram-code-editor:focus { border-color: #6aaab4; box-shadow: 0 0 0 2px rgb(74 151 165 / 12%); }
-.diagram-monaco-editor { flex: 1; min-height: 0; overflow: hidden; border: 1px solid #c6dadd; border-radius: 4px; }
+.diagram-monaco-editor { flex: 1; min-height: 0; width: 100%; overflow: hidden; }
 .code-node-highlight { background: rgb(28 141 165 / 14%); border-left: 3px solid #1c8da5; }
 .code-error { margin: 0; padding: 8px 9px; color: #9b3f48; background: #fff0f1; border: 1px solid #f0c4c8; border-radius: 3px; font: 10px/1.4 "DM Mono"; }
 .code-apply { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; color: #fff; background: #00546d; border: 1px solid #00546d; border-radius: 3px; font-size: 11px; }

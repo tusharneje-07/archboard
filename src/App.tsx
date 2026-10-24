@@ -1657,7 +1657,7 @@ function Editor({ project }: { project: Project }) {
              <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button></div>
               <MonacoEditor
                 className="diagram-monaco-editor"
-                height="520px"
+                height="100%"
                 language="json"
                 theme="light"
                 value={codeDraft}
