@@ -15,21 +15,51 @@ The final import file must be exactly one JSON object with exactly two top-level
 
 Return valid JSON only when the user asks for an import file. Do not add Markdown, comments, explanations, trailing commas, or JavaScript expressions around the JSON. Every edge reference must resolve to an existing node ID.
 
-## MCP Renderer Contract v1.1
+## Generation Rules
 
-When using Archboard through the MCP server, use the MCP contract below rather than assuming that every browser-editor field is rendered identically.
+Generate the diagram in this order: nodes, positions and sizes, then edges. Never invent an edge before both endpoint nodes and their physical relationship are known.
 
-- MCP uses the same node, Frame, label, image, handle, arrow, and route semantics as the browser renderer. Frame children may use `parentId` and `extent: "parent"` with Frame-relative positions.
-- MCP sanitizes `html: true` labels into plain SVG text while preserving their readable content.
-- MCP preserves multiline labels, including literal `\n` and actual newline characters, and renders them as separate text lines.
-- Frame labels render at the top-left with padding in MCP output. Ordinary node labels remain centered.
-- Use MCP `mode: "validate"` before rendering when accuracy matters. It returns `valid`, per-field warnings, node bounding boxes, computed edge points, label anchor points, label rectangles, and overlap warnings without creating an image.
-- Use MCP `format: "png"` for the default image. `filePath` writes the artifact to `/tmp` and returns `{ "path", "width", "height" }` metadata. `png_bytes: "base64"` also returns PNG image content.
-- MCP `strict` defaults to `true`. Rendering is blocked when any warning exists; the tool returns a repair report with warnings and geometry instead of an inaccurate image. Set `strict: false` only when an intentionally imperfect draft is needed.
-- Use MCP `layout: "auto"` for deterministic rank layout. Use `layoutHints.rankDirection: "LR"` or `"TB"`; manual `position` values remain the override with `layout: "manual"`.
-- MCP incremental operations are `add_node`, `move_node`, `update_node`, `remove_node`, `add_edge`, `update_edge`, and `remove_edge`.
+- Use a left-to-right layout for flows or a top-to-bottom layout for hierarchies.
+- Use `arrow: "single"` for normal flow. The arrow always points from `source` to `target`.
+- Use `route: "orthogonal"` for a hierarchy or process flow. Use `route: "straight"` only when the direct corridor is clear.
+- Use `route: "free"` only for a genuine feedback, retry, error, or return loop. Never use free curves for ordinary parent-to-child edges.
+- For a node above a child, use `sourceHandle: "bottom"` and omit `targetHandle`. The default target is the child's top handle.
+- For a node left of a child, use `sourceHandle: "right"` and `targetHandle: "left-target"`.
+- For a node right of a child, use `sourceHandle: "left"` and `targetHandle: "right-target"`.
+- For a node below a child, use `sourceHandle: "top"` and `targetHandle: "bottom-target"`.
+- Do not use `sourceHandle: "left"` or `sourceHandle: "right"` for a vertical parent-to-child connection unless the user explicitly requests a side connection.
+- Do not use `targetHandle: "top"`; omit it. The only valid explicit target handles are `bottom-target`, `left-target`, and `right-target`.
+- Do not reverse `source` and `target` to make an arrow look right. Fix the semantic direction first, then choose handles.
+- Do not use `double` for ordinary request/response flows. Use two clearly directed `single` edges if the directions need separate labels.
 
-Do not send unsupported browser-only assumptions to the MCP renderer. Always resolve validation warnings before asking for a final image.
+### Hierarchy Pattern
+
+For one parent with several children below it, place the parent above the children and use one orthogonal edge per child. Every edge must use the same source and target handle policy:
+
+```json
+{
+  "id": "parent-to-child",
+  "source": "parent",
+  "target": "child",
+  "type": "smart",
+  "sourceHandle": "bottom",
+  "data": {
+    "route": "orthogonal",
+    "arrow": "single",
+    "stroke": "#202020",
+    "width": 1.5,
+    "dashed": false,
+    "dash": 6,
+    "gap": 5,
+    "label": "",
+    "labelDirection": "horizontal",
+    "labelHtml": false
+  },
+  "markerEnd": { "type": "arrowclosed", "color": "#202020" }
+}
+```
+
+Do not replace this pattern with curved edges, side handles, or reversed edges merely because the child is horizontally offset. The route may use elbows, but the semantic source remains the parent and the target remains the child.
 
 ## Node Schema
 
@@ -266,7 +296,7 @@ Every connector should use this structure:
 - `data.dashed`: boolean.
 - `data.dash` and `data.gap`: dash and gap lengths when dashed.
 - `data.label`: optional plain-text connector label. Use `\n` for multiline labels.
-- `data.labelAt`: optional label position: `"source"`, `"mid"`, `"target"`, or a number from `0` to `1`. MCP uses this to move the label along the route.
+- `data.labelAt`: optional label position: `"source"`, `"mid"`, `"target"`, or a number from `0` to `1`.
 - `data.labelDirection`: `horizontal`, `along`, or `vertical`.
 - `data.labelHtml`: `false` unless safe formatting is intentionally required.
 
@@ -492,6 +522,21 @@ Use node dimensions that match the text. For ordinary components, start around `
 12. Validate JSON syntax, IDs, parent relationships, handles, route choice, label clearance, and arrow direction.
 13. Return only the final `{ "nodes": [], "edges": [] }` JSON object.
 
+## Final Arrow Audit
+
+Before returning JSON, inspect every edge individually. Write the semantic sentence first, for example `intellectual-property -> commercialization`. Then verify:
+
+1. `source` is the node where the flow starts and `target` is the node where the arrowhead ends.
+2. If the source is above the target, use `sourceHandle: "bottom"` and omit `targetHandle`.
+3. If the source is left of the target, use `sourceHandle: "right"` and `targetHandle: "left-target"`.
+4. If the source is right of the target, use `sourceHandle: "left"` and `targetHandle: "right-target"`.
+5. If the source is below the target, use `sourceHandle: "top"` and `targetHandle: "bottom-target"`.
+6. A normal hierarchy edge uses `route: "orthogonal"`, never `route: "free"`.
+7. A normal flow edge uses `arrow: "single"`; never reverse the edge to change the visual direction.
+8. `markerEnd` is optional metadata, but if present it must agree with `data.arrow`.
+
+Reject and repair the JSON if any ordinary parent-to-child edge is curved, uses a side handle despite a vertical relationship, has reversed `source` and `target`, or has an arrowhead at the wrong endpoint.
+
 ## Preflight Checklist
 
 - Top-level object contains only `nodes` and `edges`.
@@ -514,25 +559,3 @@ Use node dimensions that match the text. For ordinary components, start around `
 - Long labels are shortened or split with `\n`; explanatory prose is moved to a text node.
 - Images and icons are absent unless requested or explicitly required; image nodes retain readable labels.
 - JSON has no comments, trailing commas, undefined values, or duplicate IDs.
-
-## MCP Tool Request Options
-
-The MCP tool accepts the diagram plus these optional fields:
-
-```json
-{
-  "diagram": { "nodes": [], "edges": [] },
-  "mode": "validate",
-  "format": "png",
-  "filePath": "/tmp/architecture.png",
-  "png_bytes": "base64",
-  "strict": true,
-  "layout": "manual",
-  "layoutHints": { "rankDirection": "LR" },
-  "operations": [
-    { "op": "move_node", "id": "api", "x": 420, "y": 180 }
-  ]
-}
-```
-
-`mode: "validate"` is the cheapest accuracy loop. Inspect every warning before rendering. Geometry output reports each node `bbox`, each edge's `points`, `start`, `end`, and the label's `anchor`, `box`, normalized `at` value, `capacityChars`, and capacity hint. `text_overflow` means a node label is wider than its content area. `node_overlap` means two component boxes intersect. A `label_overlap` warning means the label rectangle intersects a node with clearance; fix it with `labelAt`, shorter text, a different route, or more node spacing.

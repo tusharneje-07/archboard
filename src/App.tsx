@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import { create } from "zustand";
 import DOMPurify from "dompurify";
 import { toJpeg, toPng, toSvg } from "html-to-image";
@@ -961,13 +962,18 @@ function Editor({ project }: { project: Project }) {
     [importOpen, setImportOpen] = useState(false),
     [importDraft, setImportDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
     [importError, setImportError] = useState(""),
-    [codeDraft, setCodeDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
-    [codeError, setCodeError] = useState("");
+     [codeDraft, setCodeDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
+     [codeError, setCodeError] = useState(""),
+     [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; nodeIds: string[] } | null>(null),
+     [codeHighlightId, setCodeHighlightId] = useState(""),
+     [codeEditorReady, setCodeEditorReady] = useState(0);
   const reactFlow = useReactFlow(),
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
   const layerRoot = useRef<Root | null>(null);
   const layerHost = useRef<HTMLDivElement | null>(null);
+  const codeEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const codeDecorationRef = useRef<string[]>([]);
   const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
   const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
   const saveProjectName = () => {
@@ -1041,6 +1047,32 @@ function Editor({ project }: { project: Project }) {
     reader.readAsText(file);
   };
   useEffect(() => { if (layerHost.current) layerHost.current.style.display = leftTab === "layers" ? "block" : "none"; if (leftTab === "code") { setCodeDraft(diagramJson()); setCodeError(""); } }, [leftTab]);
+  useEffect(() => {
+    if (leftTab !== "code" || !codeHighlightId || !codeEditorRef.current) return;
+    const marker = `"id": "${codeHighlightId}"`;
+    const model = codeEditorRef.current.getModel();
+    if (!model) return;
+    const start = model.getValue().indexOf(marker);
+    if (start < 0) return;
+    const editor = codeEditorRef.current;
+    const objectStartIndex = model.getValue().lastIndexOf("{", start - 1);
+    if (objectStartIndex < 0) return;
+    let depth = 0, inString = false, escaped = false, end = -1;
+    for (let index = objectStartIndex; index < model.getValue().length; index++) {
+      const character = model.getValue()[index];
+      if (escaped) { escaped = false; continue; }
+      if (character === "\\" && inString) { escaped = true; continue; }
+      if (character === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (character === "{") depth += 1;
+      if (character === "}" && --depth === 0) { end = index + 1; break; }
+    }
+    if (end < 0) return;
+    const objectStart = model.getPositionAt(objectStartIndex);
+    const objectEnd = model.getPositionAt(end);
+    const range = { startLineNumber: objectStart.lineNumber, startColumn: objectStart.column, endLineNumber: objectEnd.lineNumber, endColumn: objectEnd.column };
+    requestAnimationFrame(() => { editor.focus(); editor.revealRangeInCenter(range); editor.setSelection(range); codeDecorationRef.current = editor.deltaDecorations(codeDecorationRef.current, [{ range, options: { className: "code-node-highlight", isWholeLine: false, overviewRuler: { color: "#1c8da5", position: 4 } } }]); });
+  }, [leftTab, codeDraft, codeHighlightId, codeEditorReady]);
   const startPanelResize = (side: "left" | "right", event: React.PointerEvent) => { const start = event.clientX, width = side === "left" ? leftWidth : rightWidth; const move = (current: PointerEvent) => { const next = Math.max(190, Math.min(420, width + (side === "left" ? current.clientX - start : start - current.clientX))); side === "left" ? setLeftWidth(next) : setRightWidth(next); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); };
   useEffect(() => {
     const onDragStart = (event: DragEvent) => {
@@ -1413,6 +1445,57 @@ function Editor({ project }: { project: Project }) {
     );
     setSelectedId("");
   };
+  const selectedLayoutNodes = () => nodes.filter((node) => node.selected);
+  const applyLayoutPositions = (positions: Map<string, { x: number; y: number }>) => {
+    if (positions.size < 2) return;
+    snapshot();
+    setNodes((items) => items.map((node) => {
+      const absolute = positions.get(node.id);
+      if (!absolute) return node;
+      const parent = node.parentId ? items.find((item) => item.id === node.parentId) : undefined;
+      const parentPosition = parent ? absolutePosition(parent, items) : undefined;
+      return { ...node, position: parentPosition ? { x: absolute.x - parentPosition.x, y: absolute.y - parentPosition.y } : absolute };
+    }));
+  };
+  const alignSelected = (axis: "left" | "centerX" | "right" | "top" | "centerY" | "bottom") => {
+    const items = selectedLayoutNodes();
+    if (items.length < 2) return;
+    const boxes = items.map((node) => ({ node, position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) }));
+    const left = Math.min(...boxes.map((box) => box.position.x)), right = Math.max(...boxes.map((box) => box.position.x + box.width)), top = Math.min(...boxes.map((box) => box.position.y)), bottom = Math.max(...boxes.map((box) => box.position.y + box.height));
+    applyLayoutPositions(new Map(boxes.map((box) => [box.node.id, {
+      x: axis === "left" ? left : axis === "right" ? right - box.width : axis === "centerX" ? (left + right - box.width) / 2 : box.position.x,
+      y: axis === "top" ? top : axis === "bottom" ? bottom - box.height : axis === "centerY" ? (top + bottom - box.height) / 2 : box.position.y,
+    }])));
+  };
+  const distributeSelected = (axis: "horizontal" | "vertical") => {
+    const items = selectedLayoutNodes();
+    if (items.length < 3) return;
+    const boxes = items.map((node) => ({ node, position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) })).sort((a, b) => axis === "horizontal" ? a.position.x - b.position.x : a.position.y - b.position.y);
+    const totalSize = boxes.reduce((sum, box) => sum + (axis === "horizontal" ? box.width : box.height), 0), start = axis === "horizontal" ? boxes[0].position.x : boxes[0].position.y, end = axis === "horizontal" ? boxes[boxes.length - 1].position.x + boxes[boxes.length - 1].width : boxes[boxes.length - 1].position.y + boxes[boxes.length - 1].height, gap = (end - start - totalSize) / (boxes.length - 1);
+    let cursor = start;
+    applyLayoutPositions(new Map(boxes.map((box) => {
+      const position = { x: axis === "horizontal" ? cursor : box.position.x, y: axis === "vertical" ? cursor : box.position.y };
+      cursor += (axis === "horizontal" ? box.width : box.height) + gap;
+      return [box.node.id, position] as const;
+    })));
+  };
+  const tidySelected = () => {
+    const items = selectedLayoutNodes();
+    if (items.length < 2) return;
+    const boxes = items.map((node) => ({ node, position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) })).sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x), columns = Math.max(1, Math.ceil(Math.sqrt(boxes.length))), cellWidth = Math.max(...boxes.map((box) => box.width)), cellHeight = Math.max(...boxes.map((box) => box.height)), gap = 32, left = Math.min(...boxes.map((box) => box.position.x)), top = Math.min(...boxes.map((box) => box.position.y));
+    applyLayoutPositions(new Map(boxes.map((box, index) => [box.node.id, { x: left + (index % columns) * (cellWidth + gap), y: top + Math.floor(index / columns) * (cellHeight + gap) }])));
+  };
+  const autoLayoutSelected = () => {
+    const items = selectedLayoutNodes();
+    if (items.length < 2) return;
+    const ids = new Set(items.map((node) => node.id)), ranks = new Map(items.map((node) => [node.id, 0]));
+    for (let pass = 0; pass < items.length; pass++) for (const edge of edges) if (ids.has(edge.source) && ids.has(edge.target)) ranks.set(edge.target, Math.max(ranks.get(edge.target) ?? 0, (ranks.get(edge.source) ?? 0) + 1));
+    const groups = new Map<number, Node<NodeData>[]>();
+    for (const node of items) { const rank = ranks.get(node.id) ?? 0; groups.set(rank, [...(groups.get(rank) ?? []), node]); }
+    const left = Math.min(...items.map((node) => absolutePosition(node).x)), top = Math.min(...items.map((node) => absolutePosition(node).y)), positions = new Map<string, { x: number; y: number }>();
+    [...groups.entries()].sort(([a], [b]) => a - b).forEach(([rank, group]) => group.forEach((node, index) => positions.set(node.id, { x: left + rank * 260, y: top + index * 150 })));
+    applyLayoutPositions(positions);
+  };
   const handleNodeDragStop = (_event: MouseEvent | TouchEvent, node: Node<NodeData>) => {
     if (node.data.kind === "container") return;
     const currentParent = node.parentId ? nodes.find((item) => item.id === node.parentId) : undefined;
@@ -1469,6 +1552,31 @@ function Editor({ project }: { project: Project }) {
     );
     a.download = "archboard-diagram.json";
     a.click();
+  };
+  const selectSingleNode = (id: string) => {
+    setNodes((items) => items.map((node) => ({ ...node, selected: node.id === id })));
+    setSelectedId(id);
+  };
+  const showNodeInCode = (id: string) => {
+    setCodeDraft(diagramJson());
+    setCodeHighlightId(id);
+    setLeftTab("code");
+    setContextMenu(null);
+  };
+  const exportSelectedJson = (ids: string[]) => {
+    const included = new Set(ids);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      nodes.forEach((node) => { if (node.parentId && included.has(node.parentId) && !included.has(node.id)) { included.add(node.id); changed = true; } });
+    }
+    const selection = { nodes: nodes.filter((node) => included.has(node.id)), edges: edges.filter((edge) => included.has(edge.source) && included.has(edge.target)) };
+    const anchor = document.createElement("a");
+    anchor.href = URL.createObjectURL(new Blob([JSON.stringify(selection, null, 2)], { type: "application/json" }));
+    anchor.download = `archboard-selection-${Date.now()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(anchor.href);
+    setContextMenu(null);
   };
   return (
     <main className="app-shell">
@@ -1547,7 +1655,16 @@ function Editor({ project }: { project: Project }) {
            </div></>}
            {leftTab === "code" && <div className="code-panel">
              <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button></div>
-             <textarea className="diagram-code-editor" value={codeDraft} onChange={(event) => setCodeDraft(event.target.value)} spellCheck={false} aria-label="Current diagram JSON" />
+              <MonacoEditor
+                className="diagram-monaco-editor"
+                height="520px"
+                language="json"
+                theme="light"
+                value={codeDraft}
+                onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }}
+                onChange={(value) => setCodeDraft(value ?? "")}
+                options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 12, lineNumbers: "on", folding: true, wordWrap: "on", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
+              />
              {codeError && <p className="code-error">{codeError}</p>}
              <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button>
            </div>}
@@ -1563,6 +1680,21 @@ function Editor({ project }: { project: Project }) {
         </aside>
         <section className="canvas-shell">
           <div className="canvas-stage" ref={canvas}>
+            {selectedLayoutNodes().length >= 2 && <div className="selection-toolbar" role="toolbar" aria-label="Align selected shapes">
+              <span className="selection-count">{selectedLayoutNodes().length} selected</span>
+              <button onClick={() => alignSelected("left")} title="Align left"><AlignLeft size={14} /></button>
+              <button onClick={() => alignSelected("centerX")} title="Horizontal centers"><AlignCenter size={14} /></button>
+              <button onClick={() => alignSelected("right")} title="Align right"><AlignRight size={14} /></button>
+              <span className="selection-divider" />
+              <button onClick={() => alignSelected("top")} title="Align top"><AlignVerticalJustifyStart size={14} /></button>
+              <button onClick={() => alignSelected("centerY")} title="Vertical centers"><AlignVerticalJustifyCenter size={14} /></button>
+              <button onClick={() => alignSelected("bottom")} title="Align bottom"><AlignVerticalJustifyEnd size={14} /></button>
+              <span className="selection-divider" />
+              <button onClick={() => distributeSelected("horizontal")} title="Distribute horizontal spacing">H Space</button>
+              <button onClick={() => distributeSelected("vertical")} title="Distribute vertical spacing">V Space</button>
+              <button onClick={tidySelected} title="Tidy up selected shapes">Tidy</button>
+              <button onClick={autoLayoutSelected} title="Auto layout selected shapes">Auto</button>
+            </div>}
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -1580,16 +1712,25 @@ function Editor({ project }: { project: Project }) {
               }}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
-              onNodeDragStop={handleNodeDragStop}
-              onNodeClick={(_, n) => {
-                setSelectedId(n.id);
-                setTab("appearance");
-              }}
+               onNodeDragStop={handleNodeDragStop}
+               onNodeContextMenu={(event, node) => {
+                 event.preventDefault();
+                 const selectedIds = nodes.filter((item) => item.selected).map((item) => item.id);
+                 const nodeIds = selectedIds.includes(node.id) ? selectedIds : [node.id];
+                 if (!selectedIds.includes(node.id)) selectSingleNode(node.id);
+                 setSelectedId(node.id);
+                 setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id, nodeIds });
+               }}
+               onNodeClick={(_, n) => {
+                 setContextMenu(null);
+                 setSelectedId(n.id);
+                 setTab("appearance");
+               }}
               onEdgeClick={(_, e) => {
                 setSelectedId(e.id);
                 setTab("connector");
               }}
-              onPaneClick={() => setSelectedId("")}
+               onPaneClick={() => { setSelectedId(""); setContextMenu(null); }}
               panOnDrag={false}
               panActivationKeyCode="Space"
               selectionOnDrag
@@ -1610,6 +1751,11 @@ function Editor({ project }: { project: Project }) {
               />
               <Controls showInteractive={false} />
             </ReactFlow>
+            {contextMenu && <div className="shape-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
+              <button onClick={() => showNodeInCode(contextMenu.nodeId)}><FileJson size={14} /> Show in Code Pane</button>
+              {contextMenu.nodeIds.length === 1 && <button onClick={() => { selectSingleNode(contextMenu.nodeId); setTab("appearance"); setContextMenu(null); }}><PanelRight size={14} /> Edit Properties</button>}
+              <button onClick={() => exportSelectedJson(contextMenu.nodeIds)}><Download size={14} /> Export Shape(s)</button>
+            </div>}
             <div className="canvas-history">
               <button onClick={undoDiagram} disabled={!state.past.length} title="Undo">
                 <Undo2 size={15} />
