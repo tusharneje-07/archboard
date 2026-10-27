@@ -1749,7 +1749,7 @@ function Editor({ project }: { project: Project }) {
                 setTab("connector");
               }}
                onPaneClick={() => { setSelectedId(""); setContextMenu(null); }}
-              panOnDrag={false}
+               panOnDrag={[1]}
               panActivationKeyCode="Space"
               selectionOnDrag
               selectionMode={SelectionMode.Partial}
