@@ -495,11 +495,13 @@ h2 {
   transition: box-shadow 0.12s;
 }
 .diagram-node.diamond {
-  transform: rotate(45deg);
+  clip-path: none;
+  background: transparent !important;
+  border: 0 !important;
 }
-.diagram-node.diamond .node-copy {
-  transform: rotate(-45deg);
-}
+.diamond-face { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.diagram-node.diamond .node-copy { position: relative; z-index: 1; }
+.diagram-node.diamond .react-flow__handle { z-index: 2; }
 .diagram-node.text {
   overflow: visible;
 }

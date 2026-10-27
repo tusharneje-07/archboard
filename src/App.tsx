@@ -128,6 +128,11 @@ type EdgeData = {
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramSnapshot = { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
 type Project = DiagramSnapshot & { id: string; name: string; createdAt: number; updatedAt: number };
+const normalizeDiamondNode = (node: Node<NodeData>): Node<NodeData> => {
+  if (node.data.kind !== "diamond") return node;
+  const width = Number(node.style?.width ?? node.data.width ?? 120), height = Number(node.style?.height ?? node.data.height ?? 120), size = Math.max(60, width, height);
+  return { ...node, style: { ...node.style, width: size, height: size }, data: { ...node.data, width: size, height: size } };
+};
 type DiagramState = {
   nodes: Node<NodeData>[];
   edges: Edge<EdgeData>[];
@@ -412,8 +417,9 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         padding: `${data.padding}px ${data.paddingX ?? data.padding}px`,
         overflow: data.kind === "container" && data.clipContent ? "hidden" : "visible",
       }}
-    >
-      {data.kind === "container" && data.borderWidth > 0 && (
+     >
+       {data.kind === "diamond" && <svg className="diamond-face" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="50,1 99,50 50,99 1,50" fill={rgba(data.fill, data.fillOpacity)} stroke={rgba(data.border, data.borderOpacity)} strokeWidth={Math.max(1, data.borderWidth * 2)} strokeDasharray={data.borderStyle === "dashed" ? `${data.dashLength ?? 8} ${data.dashGap ?? 5}` : undefined} strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>}
+       {data.kind === "container" && data.borderWidth > 0 && (
         <svg className="container-border" aria-hidden="true" width="100%" height="100%" preserveAspectRatio="none">
           <rect
             x={data.borderWidth / 2}
@@ -447,13 +453,13 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
                       ...n,
                       data: {
                         ...n.data,
-                        width: params.width,
-                        height: params.height,
+                        width: n.data.kind === "diamond" ? Math.max(60, Math.abs(params.width - Number(n.style?.width ?? n.data.width ?? 120)) >= Math.abs(params.height - Number(n.style?.height ?? n.data.height ?? 120)) ? params.width : params.height) : params.width,
+                        height: n.data.kind === "diamond" ? Math.max(60, Math.abs(params.width - Number(n.style?.width ?? n.data.width ?? 120)) >= Math.abs(params.height - Number(n.style?.height ?? n.data.height ?? 120)) ? params.width : params.height) : params.height,
                       },
                       style: {
                         ...n.style,
-                        width: params.width,
-                        height: params.height,
+                        width: n.data.kind === "diamond" ? Math.max(60, Math.abs(params.width - Number(n.style?.width ?? n.data.width ?? 120)) >= Math.abs(params.height - Number(n.style?.height ?? n.data.height ?? 120)) ? params.width : params.height) : params.width,
+                        height: n.data.kind === "diamond" ? Math.max(60, Math.abs(params.width - Number(n.style?.width ?? n.data.width ?? 120)) >= Math.abs(params.height - Number(n.style?.height ?? n.data.height ?? 120)) ? params.width : params.height) : params.height,
                       },
                     }
                   : n,
@@ -941,7 +947,7 @@ function Editor({ project }: { project: Project }) {
       redo,
       setDiagram,
     } = state;
-  const [nodes, setNodes, onNodesChange] = useNodesState(project.nodes),
+   const [nodes, setNodes, onNodesChange] = useNodesState(project.nodes.map(normalizeDiamondNode)),
     [edges, setEdges, onEdgesChange] = useEdgesState(project.edges);
   const [selectedId, setSelectedId] = useState(project.nodes[0]?.id ?? ""),
     [editingName, setEditingName] = useState(false),
@@ -1023,7 +1029,7 @@ function Editor({ project }: { project: Project }) {
   const applyDiagramJson = (source: string, closeImport = false) => {
     try {
       const value = parseDiagramJson(source);
-      setNodes(value.nodes);
+       setNodes(value.nodes.map(normalizeDiamondNode));
       setEdges(value.edges);
       setCodeDraft(JSON.stringify(value, null, 2));
       setCodeError("");
@@ -1106,8 +1112,8 @@ function Editor({ project }: { project: Project }) {
         x: event.clientX,
         y: event.clientY,
       });
-       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : 170,
-         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : 76;
+        const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : 170,
+          height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       snapshot();
       const id = `${kind}-${Date.now()}`;
@@ -1121,7 +1127,7 @@ function Editor({ project }: { project: Project }) {
           position: frame ? { x: position.x - frame.position.x, y: position.y - frame.position.y } : position,
           zIndex: kind === "container" ? 0 : 2,
           style: { width, height },
-          data: { ...baseData(kind), width, height },
+           data: { ...baseData(kind), width, height },
         },
       ]);
       setSelectedId(id);
@@ -1253,8 +1259,8 @@ function Editor({ project }: { project: Project }) {
       }
       snapshot();
       const id = `${kind}-${Date.now()}`;
-      const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : 170,
-        height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : 76;
+       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : 170,
+         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : 76;
       const selectedFrame = selected?.data.kind === "container" ? selected : undefined;
       const selectedFramePosition = selectedFrame ? absolutePosition(selectedFrame) : undefined;
       const absolute = selectedFramePosition ? { x: selectedFramePosition.x + 24, y: selectedFramePosition.y + 56 } : pos;
@@ -1266,7 +1272,7 @@ function Editor({ project }: { project: Project }) {
         position: selectedFrame && kind !== "container" ? { x: 24, y: 56 } : absolute,
         zIndex: kind === "container" ? 0 : 2,
         style: { width, height },
-        data: { ...baseData(kind), width, height },
+         data: { ...baseData(kind), width, height },
       };
       setNodes((ns) => selectedFrame ? arrangeFrame(selectedFrame.id, [...ns, node]) : [...ns, node]);
       setSelectedId(id);
@@ -1284,8 +1290,8 @@ function Editor({ project }: { project: Project }) {
         x: event.clientX,
         y: event.clientY,
       });
-      const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : 170,
-        height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : 76;
+       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : 170,
+         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       const framePosition = frame ? absolutePosition(frame) : undefined;
       snapshot();

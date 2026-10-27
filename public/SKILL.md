@@ -127,6 +127,7 @@ Every node uses this base structure:
 - `rounded`: component with rounded corners.
 - `ellipse`: circular or oval component.
 - `diamond`: decision or transformation component.
+- `diamond` nodes must always be square: keep `style.width === style.height` and `data.width === data.height`. Their four connection handles are the four vertices: `top` is the top vertex, `right` is the right vertex, `bottom` is the bottom vertex, and `left` is the left vertex. Do not attach a connector to the middle of a diamond edge.
 - `text`: standalone annotation. Use `fill: "transparent"`, `border: "transparent"`, and `borderWidth: 0`.
 - `image`: image with optional text and configurable image placement.
 - `container`: Frame or system boundary. Frames must be listed before their children.
