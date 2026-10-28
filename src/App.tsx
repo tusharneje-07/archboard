@@ -333,6 +333,25 @@ function loadSavedDiagram() {
   }
 }
 const projectsKey = "archboard-projects";
+type ExportFormat = "png" | "svg" | "jpg" | "json";
+type ExportSettings = { format: ExportFormat; transparent: boolean; quality: number; dpi: number };
+const exportSettingsKey = "archboard-export-settings";
+const defaultExportSettings: ExportSettings = { format: "png", transparent: false, quality: 90, dpi: 144 };
+function readExportSettings(): ExportSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(exportSettingsKey) || "null") as Partial<ExportSettings> | null;
+    const format = saved?.format;
+    const quality = Number(saved?.quality), dpi = Number(saved?.dpi);
+    return {
+      format: format === "png" || format === "svg" || format === "jpg" || format === "json" ? format : defaultExportSettings.format,
+      transparent: typeof saved?.transparent === "boolean" ? saved.transparent : defaultExportSettings.transparent,
+      quality: Number.isFinite(quality) ? Math.max(40, Math.min(100, quality)) : defaultExportSettings.quality,
+      dpi: [96, 144, 192, 300].includes(dpi) ? dpi : defaultExportSettings.dpi,
+    };
+  } catch {
+    return defaultExportSettings;
+  }
+}
 function readProjects(): Project[] {
   try {
     const saved = JSON.parse(localStorage.getItem(projectsKey) || "null");
@@ -989,10 +1008,10 @@ function Editor({ project }: { project: Project }) {
     [leftWidth, setLeftWidth] = useState(250),
     [rightWidth, setRightWidth] = useState(250),
     [exportOpen, setExportOpen] = useState(false),
-    [exportFormat, setExportFormat] = useState<"png" | "svg" | "jpg" | "json">("png"),
-    [exportTransparent, setExportTransparent] = useState(false),
-    [exportQuality, setExportQuality] = useState(90),
-    [exportDpi, setExportDpi] = useState(144),
+     [exportFormat, setExportFormat] = useState<ExportFormat>(() => readExportSettings().format),
+     [exportTransparent, setExportTransparent] = useState(() => readExportSettings().transparent),
+     [exportQuality, setExportQuality] = useState(() => readExportSettings().quality),
+     [exportDpi, setExportDpi] = useState(() => readExportSettings().dpi),
     [exportPreview, setExportPreview] = useState(""),
      [importOpen, setImportOpen] = useState(false),
      [importDragActive, setImportDragActive] = useState(false),
@@ -1010,8 +1029,11 @@ function Editor({ project }: { project: Project }) {
   const layerRoot = useRef<Root | null>(null);
   const layerHost = useRef<HTMLDivElement | null>(null);
   const codeEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
-  const codeDecorationRef = useRef<string[]>([]);
-  const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
+   const codeDecorationRef = useRef<string[]>([]);
+   useEffect(() => {
+     localStorage.setItem(exportSettingsKey, JSON.stringify({ format: exportFormat, transparent: exportTransparent, quality: exportQuality, dpi: exportDpi } satisfies ExportSettings));
+   }, [exportFormat, exportTransparent, exportQuality, exportDpi]);
+   const undoDiagram = () => { const previous = undo(); if (previous) { setNodes(previous.nodes); setEdges(previous.edges); } };
   const redoDiagram = () => { const next = redo(); if (next) { setNodes(next.nodes); setEdges(next.edges); } };
   const saveProjectName = () => {
     const name = nameDraft.trim();
