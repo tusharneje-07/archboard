@@ -166,7 +166,7 @@ button {
 }
 .top-actions .primary:hover { color: #fff; background: #006c88; border-color: #006c88; }
 .skill-button { white-space: nowrap; }
-.project-home { min-height: 100vh; overflow: auto; background: #f5f7f7; }
+.project-home { width: 100%; height: 100vh; min-height: 0; overflow-x: hidden; overflow-y: auto; background: #f5f7f7; }
 .home-header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 42px; background: #fff; border-bottom: 1px solid #dce5e7; }
 .home-create { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; background: #176b7d; border: 1px solid #176b7d; border-radius: 3px; font-size: 12px; font-weight: 700; }
 .home-create:hover { background: #0f596a; }
