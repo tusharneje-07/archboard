@@ -133,6 +133,29 @@ const normalizeDiamondNode = (node: Node<NodeData>): Node<NodeData> => {
   const width = Number(node.style?.width ?? node.data.width ?? 120), height = Number(node.style?.height ?? node.data.height ?? 120), size = Math.max(60, width, height);
   return { ...node, style: { ...node.style, width: size, height: size }, data: { ...node.data, width: size, height: size } };
 };
+const shapeKinds = new Set<ShapeKind>(["rectangle", "rounded", "ellipse", "diamond", "text", "image", "container"]);
+function normalizeDiagramNodes(input: unknown[]): Node<NodeData>[] {
+  return input.map((raw, index) => {
+    if (!raw || typeof raw !== "object") throw new Error(`Node ${index + 1} must be an object.`);
+    const node = raw as Partial<Node<NodeData>>;
+    if (typeof node.id !== "string" || !node.id) throw new Error(`Node ${index + 1} is missing an id.`);
+    if (!node.position || typeof node.position.x !== "number" || typeof node.position.y !== "number") throw new Error(`Node "${node.id}" has an invalid position.`);
+    const sourceData = node.data && typeof node.data === "object" ? node.data : {} as NodeData;
+    const kind = shapeKinds.has(sourceData.kind) ? sourceData.kind : "rectangle";
+    const data = { ...baseData(kind, typeof sourceData.label === "string" ? sourceData.label : undefined), ...sourceData, kind, label: typeof sourceData.label === "string" ? sourceData.label : baseData(kind).label };
+    return normalizeDiamondNode({ ...node, type: node.type ?? "shape", data } as Node<NodeData>);
+  });
+}
+function normalizeDiagramEdges(input: unknown[]): Edge<EdgeData>[] {
+  return input.map((raw, index) => {
+    if (!raw || typeof raw !== "object") throw new Error(`Edge ${index + 1} must be an object.`);
+    const edge = raw as Partial<Edge<EdgeData>>;
+    if (typeof edge.id !== "string" || !edge.id || typeof edge.source !== "string" || typeof edge.target !== "string") throw new Error(`Edge ${index + 1} is missing an id, source, or target.`);
+    const sourceData = edge.data && typeof edge.data === "object" ? edge.data as Partial<EdgeData> : {};
+    const data: EdgeData = { route: "straight", arrow: "single", stroke: "#27576B", width: 1.5, dashed: false, dash: 6, gap: 5, ...sourceData };
+    return { ...edge, type: edge.type ?? "smart", data } as Edge<EdgeData>;
+  });
+}
 type DiagramState = {
   nodes: Node<NodeData>[];
   edges: Edge<EdgeData>[];
@@ -301,8 +324,13 @@ function normalizeLoadedNodes(input: Node<NodeData>[]): Node<NodeData>[] {
 }
 
 function loadSavedDiagram() {
-  const saved = JSON.parse(localStorage.getItem("archboard-diagram") || "null");
-  return { nodes: saved?.nodes ? normalizeLoadedNodes(saved.nodes) : initialNodes, edges: saved?.edges ?? initialEdges };
+  try {
+    const saved = JSON.parse(localStorage.getItem("archboard-diagram") || "null");
+    if (!saved?.nodes || !saved?.edges) return { nodes: initialNodes, edges: initialEdges };
+    return { nodes: normalizeLoadedNodes(normalizeDiagramNodes(saved.nodes)), edges: normalizeDiagramEdges(saved.edges) };
+  } catch {
+    return { nodes: initialNodes, edges: initialEdges };
+  }
 }
 const projectsKey = "archboard-projects";
 function readProjects(): Project[] {
@@ -1024,12 +1052,12 @@ function Editor({ project }: { project: Project }) {
     if (!value || typeof value !== "object" || !Array.isArray((value as { nodes?: unknown }).nodes) || !Array.isArray((value as { edges?: unknown }).edges)) {
       throw new Error("JSON must contain nodes and edges arrays.");
     }
-    return value as { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
+    return { nodes: normalizeDiagramNodes((value as { nodes: unknown[] }).nodes), edges: normalizeDiagramEdges((value as { edges: unknown[] }).edges) };
   };
   const applyDiagramJson = (source: string, closeImport = false) => {
     try {
       const value = parseDiagramJson(source);
-       setNodes(value.nodes.map(normalizeDiamondNode));
+       setNodes(value.nodes);
       setEdges(value.edges);
       setCodeDraft(JSON.stringify(value, null, 2));
       setCodeError("");
