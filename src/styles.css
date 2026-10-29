@@ -701,7 +701,9 @@ h2 {
 .color-popover { position: fixed; z-index: 1000; width: 264px; padding: 12px; color: #e7e7e7; background: #292929; border: 1px solid #454545; border-radius: 7px; box-shadow: 0 16px 34px rgb(0 0 0 / 28%); }
 .color-surface { position: relative; height: 188px; overflow: hidden; border-radius: 5px; cursor: crosshair; }
 .color-control-row { display: flex; align-items: center; gap: 10px; margin: 12px 5px 10px; }
-.color-control-row svg { flex: 0 0 auto; color: #e7e7e7; }
+.color-eyedropper { display: grid; flex: 0 0 auto; place-items: center; width: 22px; height: 22px; padding: 0; color: #e7e7e7; border-radius: 4px; }
+.color-eyedropper:hover { color: #fff; background: #454545; }
+.color-eyedropper:focus-visible { outline: 2px solid #76c8d4; outline-offset: 2px; }
 .color-hue { position: relative; height: 18px; flex: 1; border-radius: 10px; background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%); cursor: ew-resize; }
 .color-alpha { position: relative; height: 18px; margin: 0 5px 13px; overflow: hidden; border-radius: 10px; background-color: #4a4a4a; background-image: linear-gradient(45deg, #555 25%, transparent 25%), linear-gradient(-45deg, #555 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #555 75%), linear-gradient(-45deg, transparent 75%, #555 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0px; cursor: ew-resize; }
 .color-alpha > span { position: absolute; inset: 0; }
@@ -731,6 +733,8 @@ h2 {
 .color-row {
   grid-template-columns: repeat(3, 1fr);
 }
+.line-style-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.line-style-row .field > span { white-space: nowrap; }
 .segmented {
   display: flex;
   border: 1px solid #d5e1e3;

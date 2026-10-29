@@ -2141,6 +2141,18 @@ function ColorPicker({ value, opacity = 100, onChange }: { value: string; opacit
     setAlpha(nextAlpha);
     onChange(hsvToHex(nextHsv.h, nextHsv.s, nextHsv.v), nextAlpha);
   };
+  const sampleColor = async () => {
+    const EyeDropperApi = (window as Window & { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper;
+    if (!EyeDropperApi) return;
+    try {
+      const result = await new EyeDropperApi().open();
+      const nextColor = result.sRGBHex.toUpperCase();
+      setHsv(hexToHsv(nextColor));
+      onChange(nextColor, alpha);
+    } catch {
+      // Sampling is cancelled when the browser rejects the picker promise.
+    }
+  };
   const setFromPointer = (event: React.PointerEvent<HTMLDivElement>, mode: "sv" | "hue" | "alpha") => {
     const rect = event.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
@@ -2168,8 +2180,8 @@ function ColorPicker({ value, opacity = 100, onChange }: { value: string; opacit
       <div className="color-surface" style={{ background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))` }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setFromPointer(event, "sv"); }} onPointerMove={(event) => { if (event.buttons) setFromPointer(event, "sv"); }}>
         <span className="color-picker-handle" style={{ left: `${hsv.s}%`, top: `${100 - hsv.v}%` }} />
       </div>
-      <div className="color-control-row">
-        <Pipette size={16} />
+       <div className="color-control-row">
+         <button className="color-eyedropper" type="button" title="Pick a color from the screen" aria-label="Pick a color from the screen" onClick={() => void sampleColor()}><Pipette size={16} /></button>
         <div className="color-hue" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setFromPointer(event, "hue"); }} onPointerMove={(event) => { if (event.buttons) setFromPointer(event, "hue"); }}><span className="color-picker-handle" style={{ left: `${hsv.h / 3.6}%` }} /></div>
       </div>
       <div className="color-alpha" onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setFromPointer(event, "alpha"); }} onPointerMove={(event) => { if (event.buttons) setFromPointer(event, "alpha"); }}><span style={{ background: rgba(hsvToHex(hsv.h, hsv.s, hsv.v), alpha) }} /><i className="color-picker-handle" style={{ left: `${alpha}%` }} /></div>
@@ -2211,6 +2223,7 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
   };
   return (
     <div className="inspector-content">
+      <div className="section-label">Content format</div>
       <div className="segmented">
         <button
           className={!html ? "active" : ""}
@@ -2274,6 +2287,7 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
           <input type="number" min="0" max="48" value={data.imageRadius ?? 4} onChange={(event) => update({ imageRadius: Math.max(0, +event.target.value) })} />
         </Field>
       </>}
+      <div className="section-label">Content</div>
       <Field label="Content">
         <textarea
           value={data.label}
@@ -2285,6 +2299,7 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
         HTML is sanitized with DOMPurify. Use &lt;strong&gt;, &lt;em&gt;,
         &lt;u&gt;, &lt;p&gt;, lists, links and line breaks.
       </p>
+      <div className="section-label">Typography</div>
       <Field label="Font family">
         <select
           value={data.fontFamily}
@@ -2448,12 +2463,10 @@ function AppearancePanel({
   return (
     <div className="inspector-content">
       {data.kind === "line" && <>
-        <div className="color-row">
+        <div className="section-label">Line styling</div>
+        <div className="line-style-row">
           <Field label="Line color">
             <ColorPicker value={data.lineStroke ?? "#27576B"} onChange={(color) => update({ lineStroke: color })} />
-          </Field>
-          <Field label="Width">
-            <input type="number" min=".5" max="8" step=".5" value={data.lineWidth ?? 1.5} onChange={(event) => update({ lineWidth: Math.max(.5, +event.target.value) })} />
           </Field>
         </div>
         <Field label="Arrowhead">
@@ -2481,6 +2494,7 @@ function AppearancePanel({
           <Field label="Gap"><input type="number" min="1" value={data.lineGap ?? 5} onChange={(event) => update({ lineGap: Math.max(1, +event.target.value) })} /></Field>
         </div>}
       </>}
+      <div className="section-label">Surface styling</div>
       <div className="color-row">
         <Field label="Fill">
           <ColorPicker value={data.fill} opacity={data.fillOpacity} onChange={(color, opacity) => update({ fill: color, fillOpacity: opacity })} />
@@ -2492,6 +2506,7 @@ function AppearancePanel({
           <ColorPicker value={data.textColor} opacity={data.textOpacity} onChange={(color, opacity) => update({ textColor: color, textOpacity: opacity })} />
         </Field>
       </div>
+      <div className="section-label">Dimensions</div>
       <div className="two-col">
         <Field label="Width">
           <input
@@ -2529,6 +2544,10 @@ function AppearancePanel({
         />
         <b>{data.borderWidth}px</b>
       </Field>
+      {data.kind === "line" && <Field label="Line thickness">
+        <input type="range" min=".5" max="8" step=".5" value={data.lineWidth ?? 1.5} onChange={(event) => update({ lineWidth: +event.target.value })} />
+        <b>{data.lineWidth ?? 1.5}px</b>
+      </Field>}
       <div className="two-col">
         <Field label="Border style">
           <select
@@ -2644,6 +2663,7 @@ function ConnectorPanel({
 }) {
   return (
     <div className="inspector-content">
+      <div className="section-label">Label content</div>
       <Field label="Label">
         <textarea
           value={data.label ?? ""}
@@ -2657,7 +2677,7 @@ function ConnectorPanel({
         <button className={data.labelHtml ? "active" : ""} onClick={() => update({ labelHtml: true })}>HTML source</button>
       </div>
       <p className="helper">Supports line breaks and sanitized HTML such as &lt;strong&gt;, &lt;em&gt;, lists, links and inline formatting.</p>
-      <div className="section-label">Label appearance</div>
+       <div className="section-label">Label typography</div>
        {includeLabelColors && <div className="color-row">
         <Field label="Text color"><ColorPicker value={data.labelColor ?? "#42606b"} onChange={(color) => update({ labelColor: color })} /></Field>
         <Field label="Fill"><ColorPicker value={data.labelFill ?? "#FFFFFF"} onChange={(color) => update({ labelFill: color })} /></Field>
@@ -2671,12 +2691,12 @@ function ConnectorPanel({
         <Field label="Padding"><input type="number" min="0" max="24" value={data.labelPadding ?? 3} onChange={(event) => update({ labelPadding: Math.max(0, +event.target.value) })} /></Field>
         <Field label="Radius"><input type="number" min="0" max="24" value={data.labelRadius ?? 0} onChange={(event) => update({ labelRadius: Math.max(0, +event.target.value) })} /></Field>
       </div>
-      <div className="two-col">
-        <Field label="Border width"><input type="number" min="0" max="6" step=".5" value={data.labelBorderWidth ?? 1} onChange={(event) => update({ labelBorderWidth: Math.max(0, +event.target.value) })} /></Field>
-        <Field label="Font family"><select value={data.labelFontFamily ?? "DM Mono"} onChange={(event) => update({ labelFontFamily: event.target.value })}><option>DM Mono</option><option>Arial</option><option>Inter</option><option>Roboto</option><option>Georgia</option></select></Field>
-      </div>
+       <div className="two-col">
+         {includeLabelColors && <Field label="Border width"><input type="number" min="0" max="6" step=".5" value={data.labelBorderWidth ?? 1} onChange={(event) => update({ labelBorderWidth: Math.max(0, +event.target.value) })} /></Field>}
+         <Field label="Font family"><select value={data.labelFontFamily ?? "DM Mono"} onChange={(event) => update({ labelFontFamily: event.target.value })}><option>DM Mono</option><option>Arial</option><option>Inter</option><option>Roboto</option><option>Georgia</option></select></Field>
+       </div>
       <Field label="Text alignment"><select value={data.labelAlign ?? "center"} onChange={(event) => update({ labelAlign: event.target.value as EdgeData["labelAlign"] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></Field>
-       {includeRouting && <div className="section-label">Label direction</div>}
+       {includeRouting && <div className="section-label">Line behavior</div>}
        {includeRouting && <div className="segmented">
         <button className={(data.labelDirection ?? "horizontal") === "horizontal" ? "active" : ""} onClick={() => update({ labelDirection: "horizontal" })}>Horizontal</button>
         <button className={data.labelDirection === "along" ? "active" : ""} onClick={() => update({ labelDirection: "along" })}>Along line</button>
