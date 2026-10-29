@@ -234,6 +234,12 @@ button {
   min-width: 0;
   overflow: hidden;
 }
+.right-panel.is-collapsed { display: none; }
+.panel-toggle,
+.panel-reopen { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; color: #64777f; border: 1px solid transparent; border-radius: 4px; }
+.panel-toggle:hover,
+.panel-reopen:hover { color: #176b7d; background: #edf7f8; border-color: #b9dce1; }
+.panel-reopen { position: absolute; top: 14px; right: 14px; z-index: 20; background: #fff; border-color: #d7e4e6; box-shadow: 0 5px 16px rgb(37 73 82 / 14%); }
 .right-panel > *,
 .inspector-content,
 .inspector-content > *,

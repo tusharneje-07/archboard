@@ -1056,8 +1056,9 @@ function Editor({ project }: { project: Project }) {
     [grid, setGrid] = useState(true),
     [snap, setSnap] = useState(true),
     [leftTab, setLeftTab] = useState<"shapes" | "layers" | "code">("shapes"),
-    [leftWidth, setLeftWidth] = useState(250),
-    [rightWidth, setRightWidth] = useState(250),
+     [leftWidth, setLeftWidth] = useState(250),
+     [rightWidth, setRightWidth] = useState(250),
+     [rightPanelOpen, setRightPanelOpen] = useState(true),
     [exportOpen, setExportOpen] = useState(false),
      [exportFormat, setExportFormat] = useState<ExportFormat>(() => readExportSettings().format),
      [exportTransparent, setExportTransparent] = useState(() => readExportSettings().transparent),
@@ -1906,8 +1907,9 @@ function Editor({ project }: { project: Project }) {
                 nodeColor={(n) => (n.data as NodeData).fill}
                 maskColor="rgba(248,250,252,.75)"
               />
-              <Controls showInteractive={false} />
+             <Controls showInteractive={false} />
             </ReactFlow>
+            {!rightPanelOpen && <button className="panel-reopen" type="button" title="Show inspector" aria-label="Show inspector" onClick={() => setRightPanelOpen(true)}><PanelRight size={17} /></button>}
             {contextMenu && <div className="shape-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
               <button onClick={() => showNodeInCode(contextMenu.nodeId)}><FileJson size={14} /> Show in Code Pane</button>
               {contextMenu.nodeIds.length === 1 && <button onClick={() => { selectSingleNode(contextMenu.nodeId); setTab("appearance"); setContextMenu(null); }}><PanelRight size={14} /> Edit Properties</button>}
@@ -1923,7 +1925,7 @@ function Editor({ project }: { project: Project }) {
             </div>
           </div>
         </section>
-        <aside className="right-panel" style={{ width: rightWidth, flexBasis: rightWidth }}>
+        <aside className={`right-panel${rightPanelOpen ? "" : " is-collapsed"}`} style={{ width: rightPanelOpen ? rightWidth : 0, flexBasis: rightPanelOpen ? rightWidth : 0 }}>
           <div className="panel-heading">
             <div>
               <span className="eyebrow">Inspector</span>
@@ -1935,7 +1937,7 @@ function Editor({ project }: { project: Project }) {
                     : "Properties"}
               </h2>
             </div>
-            <PanelRight size={17} />
+             <button className="panel-toggle" type="button" title="Hide inspector" aria-label="Hide inspector" onClick={() => setRightPanelOpen(false)}><PanelRight size={17} /></button>
           </div>
           {selected || selectedEdge ? (
             <>
