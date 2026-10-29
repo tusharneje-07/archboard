@@ -453,7 +453,7 @@ h2 {
   flex: 1;
   min-height: 0;
 }
-.selection-toolbar { position: absolute; top: 14px; left: 50%; z-index: 20; display: flex; align-items: center; gap: 4px; padding: 6px 8px; transform: translateX(-50%); color: #36545d; background: rgb(255 255 255 / 96%); border: 1px solid #d7e4e6; border-radius: 8px; box-shadow: 0 8px 24px rgb(37 73 82 / 14%); white-space: nowrap; }
+.selection-toolbar { position: absolute; top: 14px; left: 50%; z-index: 20; display: flex; align-items: center; gap: 4px; padding: 6px 8px; transform: translateX(-50%); color: #36545d; background: rgb(255 255 255 / 96%); border: 1px solid #d7e4e6; border-radius: 8px; box-shadow: 0 8px 24px rgb(37 73 82 / 14%); white-space: nowrap; user-select: none; -webkit-user-select: none; }
 .selection-toolbar button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 26px; padding: 0 6px; color: #47636b; background: transparent; border: 1px solid transparent; border-radius: 4px; font: 10px "DM Mono", monospace; cursor: pointer; }
 .selection-toolbar button:hover { color: #075d73; background: #e8f5f7; border-color: #b8d9de; }
 .selection-count { padding: 0 5px 0 2px; color: #698087; font: 10px "DM Mono", monospace; }
@@ -504,6 +504,28 @@ h2 {
 .diagram-node.diamond .react-flow__handle { z-index: 2; }
 .diagram-node.text {
   overflow: visible;
+}
+.diagram-node.line {
+  overflow: visible;
+  min-width: 60px;
+  min-height: 24px;
+}
+.line-face {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.diagram-node.line .node-copy {
+  position: relative;
+  z-index: 1;
+  margin-top: 28px;
+  color: #60777e;
+  font: 10px "DM Mono";
+  text-align: center;
 }
 .image-node { gap: 10px; }
 .image-media { position: relative; overflow: hidden; min-width: 0; min-height: 0; }

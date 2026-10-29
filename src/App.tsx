@@ -51,6 +51,7 @@ import {
   Home,
   Image as ImageIcon,
   Link2,
+  Minus,
   MousePointer2,
   PanelRight,
   PenLine,
@@ -74,7 +75,8 @@ type ShapeKind =
   | "diamond"
   | "text"
   | "image"
-  | "container";
+  | "container"
+  | "line";
 type NodeData = {
   kind: ShapeKind;
   label: string;
@@ -112,6 +114,15 @@ type NodeData = {
   imageAssetId?: string;
   imageAssetSource?: "simple-icons" | "svg-logos" | "iconify";
   imageAssetName?: string;
+  lineArrow?: "none" | "single" | "double";
+  lineStroke?: string;
+  lineWidth?: number;
+  lineDashed?: boolean;
+  lineDash?: number;
+  lineGap?: number;
+  lineRoute?: "straight" | "orthogonal" | "free";
+  lineLabelDirection?: "horizontal" | "along" | "vertical";
+  lineLabelHtml?: boolean;
 };
 type EdgeData = {
   route: "straight" | "orthogonal" | "free";
@@ -133,7 +144,7 @@ const normalizeDiamondNode = (node: Node<NodeData>): Node<NodeData> => {
   const width = Number(node.style?.width ?? node.data.width ?? 120), height = Number(node.style?.height ?? node.data.height ?? 120), size = Math.max(60, width, height);
   return { ...node, style: { ...node.style, width: size, height: size }, data: { ...node.data, width: size, height: size } };
 };
-const shapeKinds = new Set<ShapeKind>(["rectangle", "rounded", "ellipse", "diamond", "text", "image", "container"]);
+const shapeKinds = new Set<ShapeKind>(["rectangle", "rounded", "ellipse", "diamond", "text", "image", "container", "line"]);
 function normalizeDiagramNodes(input: unknown[]): Node<NodeData>[] {
   return input.map((raw, index) => {
     if (!raw || typeof raw !== "object") throw new Error(`Node ${index + 1} must be an object.`);
@@ -226,8 +237,17 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
   imageFit: "contain",
   imageSize: 42,
   imageOpacity: 100,
-  imageRadius: 4,
-});
+   imageRadius: 4,
+   lineArrow: "single",
+   lineStroke: "#27576B",
+   lineWidth: 1.5,
+   lineDashed: false,
+   lineDash: 6,
+   lineGap: 5,
+   lineRoute: "straight",
+   lineLabelDirection: "horizontal",
+   lineLabelHtml: false,
+ });
 const initialNodes: Node<NodeData>[] = [
   {
     id: "client",
@@ -428,15 +448,16 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
   const imageCentered = imagePosition === "center";
   const imageHorizontal = imagePosition === "left" || imagePosition === "right";
   const imageDirection = imagePosition === "right" ? "row-reverse" : imagePosition === "top" || imageCentered ? "column" : imagePosition === "bottom" ? "column-reverse" : "row";
+  const lineWidth = Number(data.width ?? 170), lineHeight = Number(data.height ?? 32), lineY = lineHeight / 2, lineArrowSize = 12, lineStart = data.lineArrow === "double" ? lineArrowSize : 4, lineEnd = data.lineArrow === "none" ? lineWidth - 4 : lineWidth - lineArrowSize;
   const textAlignItems = data.vertical === "top" ? "flex-start" : data.vertical === "bottom" ? "flex-end" : "center";
   const textJustifyContent = data.align === "left" ? "flex-start" : data.align === "right" ? "flex-end" : "center";
   return (
     <div
       className={`diagram-node ${data.kind} ${data.kind === "image" ? "image-node" : ""} ${selected ? "is-selected" : ""}`}
       style={{
-         background: data.kind === "text" ? "transparent" : rgba(data.fill, data.fillOpacity),
+         background: data.kind === "text" || data.kind === "line" ? "transparent" : rgba(data.fill, data.fillOpacity),
          borderColor: rgba(data.border, data.borderOpacity),
-         borderWidth: data.kind === "text" || data.kind === "container" ? 0 : data.borderWidth,
+         borderWidth: data.kind === "text" || data.kind === "container" || data.kind === "line" ? 0 : data.borderWidth,
         borderStyle: data.borderStyle,
         borderRadius: data.kind === "ellipse" ? "50%" : data.radius,
          color: rgba(data.textColor, data.textOpacity),
@@ -461,11 +482,12 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
             : data.vertical === "bottom"
               ? "flex-end"
               : "center",
-        padding: `${data.padding}px ${data.paddingX ?? data.padding}px`,
+         padding: data.kind === "line" ? 0 : `${data.padding}px ${data.paddingX ?? data.padding}px`,
         overflow: data.kind === "container" && data.clipContent ? "hidden" : "visible",
       }}
      >
-       {data.kind === "diamond" && <svg className="diamond-face" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="50,1 99,50 50,99 1,50" fill={rgba(data.fill, data.fillOpacity)} stroke={rgba(data.border, data.borderOpacity)} strokeWidth={Math.max(1, data.borderWidth * 2)} strokeDasharray={data.borderStyle === "dashed" ? `${data.dashLength ?? 8} ${data.dashGap ?? 5}` : undefined} strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>}
+        {data.kind === "line" && <svg className="line-face" viewBox={`0 0 ${lineWidth} ${lineHeight}`} preserveAspectRatio="none" aria-hidden="true"><line x1={lineStart} y1={lineY} x2={lineEnd} y2={lineY} stroke={data.lineStroke} strokeWidth={data.lineWidth} strokeDasharray={data.lineDashed ? `${data.lineDash ?? 6} ${data.lineGap ?? 5}` : undefined} vectorEffect="non-scaling-stroke" />{data.lineArrow !== "none" && <polygon points={`${lineWidth},${lineY} ${lineWidth - lineArrowSize},${lineY - lineArrowSize / 2} ${lineWidth - lineArrowSize},${lineY + lineArrowSize / 2}`} fill={data.lineStroke} />}{data.lineArrow === "double" && <polygon points={`0,${lineY} ${lineArrowSize},${lineY - lineArrowSize / 2} ${lineArrowSize},${lineY + lineArrowSize / 2}`} fill={data.lineStroke} />}</svg>}
+        {data.kind === "diamond" && <svg className="diamond-face" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="50,1 99,50 50,99 1,50" fill={rgba(data.fill, data.fillOpacity)} stroke={rgba(data.border, data.borderOpacity)} strokeWidth={Math.max(1, data.borderWidth * 2)} strokeDasharray={data.borderStyle === "dashed" ? `${data.dashLength ?? 8} ${data.dashGap ?? 5}` : undefined} strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>}
        {data.kind === "container" && data.borderWidth > 0 && (
         <svg className="container-border" aria-hidden="true" width="100%" height="100%" preserveAspectRatio="none">
           <rect
@@ -516,7 +538,12 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           }
         />
       )}
-      {data.kind !== "text" && (
+      {data.kind === "line" ? (
+        <>
+          <Handle type="target" position={Position.Left} id="start" />
+          <Handle type="source" position={Position.Right} id="end" />
+        </>
+      ) : data.kind !== "text" && (
         <>
           <Handle type="target" position={Position.Top} />
           <Handle type="source" position={Position.Top} id="top" />
@@ -534,7 +561,7 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         style={data.kind === "image" ? { display: "flex", flex: "1 1 auto", width: "auto", minWidth: 0, minHeight: 0, alignItems: textAlignItems, justifyContent: textJustifyContent } : undefined}
         contentEditable
         suppressContentEditableWarning
-        dangerouslySetInnerHTML={{ __html: content }}
+         dangerouslySetInnerHTML={{ __html: data.kind === "line" ? DOMPurify.sanitize(data.label) : content }}
         onDoubleClick={(e) => {
           e.stopPropagation();
           e.currentTarget.focus();
@@ -659,6 +686,7 @@ const shapeOptions: [ShapeKind, string, typeof Square][] = [
   ["text", "Text", Type],
   ["image", "Image", ImageIcon],
   ["container", "Frame", PanelRight],
+  ["line", "Line", Minus],
 ];
 type IconCategory = "Programming Languages" | "Frameworks" | "Databases" | "Cloud Providers" | "Hosting" | "DevOps" | "Developer Tools" | "Networking" | "General Icons";
 type StoreIcon = { id: string; name: string; category: IconCategory; aliases: string[]; source: NonNullable<NodeData["imageAssetSource"]>; url: string };
@@ -737,7 +765,7 @@ function App() {
 type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
 function PresentationView({ project }: { project: Project }) {
   const reactFlow = useReactFlow();
-  const [tool, setTool] = useState<PresentationTool>("laser");
+   const [tool, setTool] = useState<PresentationTool>("laser");
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [inkSize, setInkSize] = useState(4);
   const [pencilColor, setPencilColor] = useState("#1f2528");
@@ -1029,7 +1057,8 @@ function Editor({ project }: { project: Project }) {
   const layerRoot = useRef<Root | null>(null);
   const layerHost = useRef<HTMLDivElement | null>(null);
   const codeEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
-   const codeDecorationRef = useRef<string[]>([]);
+  const codeDecorationRef = useRef<string[]>([]);
+  const selectionStart = useRef<{ x: number; y: number } | null>(null);
    useEffect(() => {
      localStorage.setItem(exportSettingsKey, JSON.stringify({ format: exportFormat, transparent: exportTransparent, quality: exportQuality, dpi: exportDpi } satisfies ExportSettings));
    }, [exportFormat, exportTransparent, exportQuality, exportDpi]);
@@ -1043,7 +1072,13 @@ function Editor({ project }: { project: Project }) {
     } else setNameDraft(project.name);
     setEditingName(false);
   };
-  const selectLayer = (id: string) => { setSelectedId(id); setNodes((items) => items.map((item) => ({ ...item, selected: item.id === id }))); };
+  const selectLayer = (id: string) => {
+    setSelectedId(id);
+    setNodes((items) => items.map((item) => ({ ...item, selected: item.id === id })));
+    setEdges((items) => items.map((item) => ({ ...item, selected: item.id === id })));
+    if (edges.some((edge) => edge.id === id)) setTab("connector");
+    else setTab("appearance");
+  };
   useEffect(() => {
     const host = document.createElement("div");
     host.className = "layers-float-host";
@@ -1062,6 +1097,7 @@ function Editor({ project }: { project: Project }) {
     layerRoot.current?.render(
       <LayerView
         nodes={nodes}
+        edges={edges}
         selectedId={selectedId}
         select={selectLayer}
         moveToFrame={moveNodeToFrame}
@@ -1162,8 +1198,8 @@ function Editor({ project }: { project: Project }) {
         x: event.clientX,
         y: event.clientY,
       });
-        const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : 170,
-          height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : 76;
+        const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : kind === "line" ? 170 : 170,
+          height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : kind === "line" ? 32 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       snapshot();
       const id = `${kind}-${Date.now()}`;
@@ -1309,8 +1345,8 @@ function Editor({ project }: { project: Project }) {
       }
       snapshot();
       const id = `${kind}-${Date.now()}`;
-       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : 170,
-         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : 76;
+       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : kind === "line" ? 170 : 170,
+         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : kind === "line" ? 32 : 76;
       const selectedFrame = selected?.data.kind === "container" ? selected : undefined;
       const selectedFramePosition = selectedFrame ? absolutePosition(selectedFrame) : undefined;
       const absolute = selectedFramePosition ? { x: selectedFramePosition.x + 24, y: selectedFramePosition.y + 56 } : pos;
@@ -1340,8 +1376,8 @@ function Editor({ project }: { project: Project }) {
         x: event.clientX,
         y: event.clientY,
       });
-       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : 170,
-         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : 76;
+       const width = kind === "text" ? 180 : kind === "image" ? 300 : kind === "container" ? 330 : kind === "diamond" ? 120 : kind === "line" ? 170 : 170,
+         height = kind === "text" ? 48 : kind === "image" ? 180 : kind === "container" ? 220 : kind === "diamond" ? 120 : kind === "line" ? 32 : 76;
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       const framePosition = frame ? absolutePosition(frame) : undefined;
       snapshot();
@@ -1794,10 +1830,40 @@ function Editor({ project }: { project: Project }) {
                  setSelectedId(n.id);
                  setTab("appearance");
                }}
-              onEdgeClick={(_, e) => {
-                setSelectedId(e.id);
-                setTab("connector");
-              }}
+                onEdgeClick={(_, e) => {
+                  setSelectedId(e.id);
+                  setEdges((items) => items.map((item) => ({ ...item, selected: item.id === e.id })));
+                  setNodes((items) => items.map((item) => ({ ...item, selected: false })));
+                  setTab("connector");
+                }}
+                onSelectionChange={({ nodes: selectedNodes }) => {
+                  const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
+                  setEdges((items) => {
+                    const next = items.map((edge) => ({ ...edge, selected: selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target) }));
+                    return items.every((edge, index) => edge.selected === next[index].selected) ? items : next;
+                  });
+                }}
+                onSelectionStart={(event) => {
+                  selectionStart.current = { x: event.clientX, y: event.clientY };
+                }}
+                onSelectionEnd={(event) => {
+                  const start = selectionStart.current;
+                  selectionStart.current = null;
+                  if (!start || !canvas.current || !("clientX" in event)) return;
+                  const end = event as unknown as { clientX: number; clientY: number };
+                  const selection = { left: Math.min(start.x, end.clientX), right: Math.max(start.x, end.clientX), top: Math.min(start.y, end.clientY), bottom: Math.max(start.y, end.clientY) };
+                  if (selection.right - selection.left < 4 || selection.bottom - selection.top < 4) return;
+                  const intersects = (rect: DOMRect) => rect.right >= selection.left && rect.left <= selection.right && rect.bottom >= selection.top && rect.top <= selection.bottom;
+                  const selectedEdgeIds = new Set(edges.filter((edge) => {
+                    const element = [...canvas.current!.querySelectorAll<SVGGElement>(".react-flow__edge")].find((candidate) => candidate.getAttribute("data-id") === edge.id);
+                    return element ? intersects(element.getBoundingClientRect()) : false;
+                  }).map((edge) => edge.id));
+                  if (selectedEdgeIds.size) {
+                    setEdges((items) => items.map((edge) => ({ ...edge, selected: selectedEdgeIds.has(edge.id) })));
+                    setSelectedId([...selectedEdgeIds][0]);
+                    setTab("connector");
+                  }
+                }}
                onPaneClick={() => { setSelectedId(""); setContextMenu(null); }}
                panOnDrag={[1]}
               panActivationKeyCode="Space"
@@ -1851,10 +1917,12 @@ function Editor({ project }: { project: Project }) {
           {selected || selectedEdge ? (
             <>
               <div className="inspector-tabs">
-                {(selectedEdge
-                  ? ["connector"]
-                  : ["text", "appearance", "themes"]
-                ).map((t) => (
+                 {(selectedEdge
+                   ? ["connector"]
+                   : selected?.data.kind === "line"
+                     ? ["text", "appearance", "themes", "connector"]
+                     : ["text", "appearance", "themes"]
+                 ).map((t) => (
                   <button
                     className={tab === t ? "active" : ""}
                     key={t}
@@ -1881,7 +1949,35 @@ function Editor({ project }: { project: Project }) {
                   }
                 />
               )}{" "}
-              {selectedEdge && tab === "connector" && (
+               {selected?.data.kind === "line" && !selectedEdge && tab === "connector" && (
+                 <ConnectorPanel
+                   data={{
+                     route: selected.data.lineRoute ?? "straight",
+                     arrow: selected.data.lineArrow ?? "single",
+                     stroke: selected.data.lineStroke ?? "#27576B",
+                     width: selected.data.lineWidth ?? 1.5,
+                     dashed: selected.data.lineDashed ?? false,
+                     dash: selected.data.lineDash ?? 6,
+                     gap: selected.data.lineGap ?? 5,
+                     label: selected.data.label,
+                     labelDirection: selected.data.lineLabelDirection,
+                     labelHtml: selected.data.lineLabelHtml,
+                   }}
+                   update={(patch) => updateSelected({
+                     ...(patch.route ? { lineRoute: patch.route } : {}),
+                     ...(patch.arrow ? { lineArrow: patch.arrow } : {}),
+                     ...(patch.stroke ? { lineStroke: patch.stroke } : {}),
+                     ...(patch.width !== undefined ? { lineWidth: patch.width } : {}),
+                     ...(patch.dashed !== undefined ? { lineDashed: patch.dashed } : {}),
+                     ...(patch.dash !== undefined ? { lineDash: patch.dash } : {}),
+                     ...(patch.gap !== undefined ? { lineGap: patch.gap } : {}),
+                     ...(patch.label !== undefined ? { label: patch.label } : {}),
+                     ...(patch.labelDirection ? { lineLabelDirection: patch.labelDirection } : {}),
+                     ...(patch.labelHtml !== undefined ? { lineLabelHtml: patch.labelHtml } : {}),
+                   })}
+                 />
+               )}
+               {selectedEdge && tab === "connector" && (
                 <ConnectorPanel data={selectedEdge.data!} update={updateEdge} />
               )}
               <button
@@ -2306,6 +2402,30 @@ function AppearancePanel({
 }) {
   return (
     <div className="inspector-content">
+      {data.kind === "line" && <>
+        <div className="color-row">
+          <Field label="Line color">
+            <ColorPicker value={data.lineStroke ?? "#27576B"} onChange={(color) => update({ lineStroke: color })} />
+          </Field>
+          <Field label="Width">
+            <input type="number" min=".5" max="8" step=".5" value={data.lineWidth ?? 1.5} onChange={(event) => update({ lineWidth: Math.max(.5, +event.target.value) })} />
+          </Field>
+        </div>
+        <Field label="Arrowhead">
+          <select value={data.lineArrow ?? "single"} onChange={(event) => update({ lineArrow: event.target.value as NodeData["lineArrow"] })}>
+            <option value="none">Plain</option><option value="single">Single</option><option value="double">Double</option>
+          </select>
+        </Field>
+        <Field label="Stroke">
+          <select value={data.lineDashed ? "dashed" : "solid"} onChange={(event) => update({ lineDashed: event.target.value === "dashed" })}>
+            <option value="solid">Solid</option><option value="dashed">Dashed</option>
+          </select>
+        </Field>
+        {data.lineDashed && <div className="two-col">
+          <Field label="Dash length"><input type="number" min="1" value={data.lineDash ?? 6} onChange={(event) => update({ lineDash: Math.max(1, +event.target.value) })} /></Field>
+          <Field label="Gap"><input type="number" min="1" value={data.lineGap ?? 5} onChange={(event) => update({ lineGap: Math.max(1, +event.target.value) })} /></Field>
+        </div>}
+      </>}
       <div className="color-row">
         <Field label="Fill">
           <ColorPicker value={data.fill} opacity={data.fillOpacity} onChange={(color, opacity) => update({ fill: color, fillOpacity: opacity })} />
@@ -2528,11 +2648,7 @@ function ConnectorPanel({
       </div>
       <div className="color-row">
         <Field label="Line">
-          <input
-            type="color"
-            value={data.stroke}
-            onChange={(e) => update({ stroke: e.target.value })}
-          />
+           <ColorPicker value={data.stroke} onChange={(color) => update({ stroke: color })} />
         </Field>
         <Field label="Width">
           <input
@@ -2578,11 +2694,13 @@ function ConnectorPanel({
 
 function LayerView({
   nodes,
+  edges,
   selectedId,
   select,
   moveToFrame,
 }: {
   nodes: Node<NodeData>[];
+  edges: Edge<EdgeData>[];
   selectedId: string;
   select: (id: string) => void;
   moveToFrame: (nodeId: string, frameId?: string) => void;
@@ -2613,6 +2731,13 @@ function LayerView({
       <div className="layers-canvas-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId) moveToFrame(nodeId); }}>Canvas</div>
       <div className="layers-float-list">
         {roots.flatMap((node) => renderLayer(node, 0))}
+        {edges.slice().reverse().map((edge) => <button key={edge.id} className={edge.id === selectedId ? "active" : ""} onClick={() => select(edge.id)}>
+          <span className="layer-caret" />
+          <span className="layer-tree-guide visible" />
+          <span className="layer-dot line" />
+          <span>{edge.data?.label?.replace(/<[^>]+>/g, "").split("\n")[0].slice(0, 22) || `${edge.source} -> ${edge.target}`}</span>
+          <small>LINE</small>
+        </button>)}
       </div>
     </div>
   );
