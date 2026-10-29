@@ -1227,15 +1227,16 @@ function Editor({ project }: { project: Project }) {
       const frame = kind === "container" ? undefined : frameAt(position, width, height);
       snapshot();
       const id = `${kind}-${Date.now()}`;
-      setNodes((ns) => [
-        ...ns,
-        {
+       setNodes((ns) => [
+         ...ns.map((item) => ({ ...item, selected: false })),
+         {
           id,
           type: "shape",
           parentId: frame?.id,
           extent: frame ? "parent" : undefined,
           position: frame ? { x: position.x - frame.position.x, y: position.y - frame.position.y } : position,
-          zIndex: kind === "container" ? 0 : 2,
+           zIndex: kind === "container" ? 0 : 2,
+           selected: true,
           style: { width, height },
            data: { ...baseData(kind), width, height },
         },
@@ -1384,7 +1385,10 @@ function Editor({ project }: { project: Project }) {
         style: { width, height },
          data: { ...baseData(kind), width, height },
       };
-      setNodes((ns) => selectedFrame ? arrangeFrame(selectedFrame.id, [...ns, node]) : [...ns, node]);
+       setNodes((ns) => {
+         const next = [...ns.map((item) => ({ ...item, selected: false })), { ...node, selected: true }];
+         return selectedFrame ? arrangeFrame(selectedFrame.id, next) : next;
+       });
       setSelectedId(id);
     },
     [selected, setNodes, snapshot],
@@ -1415,9 +1419,10 @@ function Editor({ project }: { project: Project }) {
           position: framePosition ? { x: position.x - framePosition.x, y: position.y - framePosition.y } : position,
           zIndex: kind === "container" ? 0 : 2,
           style: { width, height },
-          data: { ...baseData(kind), width, height },
+           selected: true,
+           data: { ...baseData(kind), width, height },
         };
-        const next = [...ns, nextNode];
+        const next = [...ns.map((item) => ({ ...item, selected: false })), nextNode];
         return frame ? arrangeFrame(frame.id, next) : next;
       });
       setSelectedId(id);
@@ -1680,6 +1685,7 @@ function Editor({ project }: { project: Project }) {
   };
   const selectSingleNode = (id: string) => {
     setNodes((items) => items.map((node) => ({ ...node, selected: node.id === id })));
+    setEdges((items) => items.map((edge) => ({ ...edge, selected: false })));
     setSelectedId(id);
   };
   const showNodeInCode = (id: string) => {
@@ -1849,11 +1855,13 @@ function Editor({ project }: { project: Project }) {
                  setSelectedId(node.id);
                  setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id, nodeIds });
                }}
-               onNodeClick={(_, n) => {
-                 setContextMenu(null);
-                 setSelectedId(n.id);
-                 setTab("appearance");
-               }}
+                onNodeClick={(_, n) => {
+                  setContextMenu(null);
+                  setSelectedId(n.id);
+                  setNodes((items) => items.map((item) => ({ ...item, selected: item.id === n.id })));
+                  setEdges((items) => items.map((item) => ({ ...item, selected: false })));
+                  setTab("appearance");
+                }}
                 onEdgeClick={(_, e) => {
                   setSelectedId(e.id);
                   setEdges((items) => items.map((item) => ({ ...item, selected: item.id === e.id })));
@@ -1888,7 +1896,12 @@ function Editor({ project }: { project: Project }) {
                     setTab("connector");
                   }
                 }}
-               onPaneClick={() => { setSelectedId(""); setContextMenu(null); }}
+                onPaneClick={() => {
+                  setSelectedId("");
+                  setContextMenu(null);
+                  setNodes((items) => items.map((item) => ({ ...item, selected: false })));
+                  setEdges((items) => items.map((item) => ({ ...item, selected: false })));
+                }}
                panOnDrag={[1]}
               panActivationKeyCode="Space"
               selectionOnDrag

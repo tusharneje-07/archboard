@@ -783,12 +783,22 @@ h2 {
 }
 .arrange-frame { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px; color: #17677a; background: #edf7f8; border: 1px solid #b9dce1; font-size: 10px; font-weight: 700; }.arrange-frame:hover { background: #dff1f3; }.frame-toggle { display: flex; align-items: center; gap: 7px; color: #71888f; font-size: 10px; }.frame-toggle input { accent-color: #27798b; }
 .section-label {
-  color: #9baaae;
-  font: 10px "DM Mono";
-  letter-spacing: 0.7px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 5px;
+  color: #58747d;
+  font: 600 11px "DM Mono";
+  letter-spacing: 0.9px;
   text-transform: uppercase;
-  padding-top: 3px;
-  border-top: 1px solid #e9eeee;
+  padding-top: 11px;
+  border-top: 1px solid #d9e5e7;
+}
+.section-label::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #edf2f3;
 }
 .helper {
   color: #91a0a4;
