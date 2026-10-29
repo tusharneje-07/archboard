@@ -135,6 +135,16 @@ type EdgeData = {
   label?: string;
   labelDirection?: "horizontal" | "along" | "vertical";
   labelHtml?: boolean;
+  labelColor?: string;
+  labelFill?: string;
+  labelBorder?: string;
+  labelBorderWidth?: number;
+  labelRadius?: number;
+  labelPadding?: number;
+  labelFontFamily?: string;
+  labelFontSize?: number;
+  labelFontWeight?: number;
+  labelAlign?: "left" | "center" | "right";
 };
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramSnapshot = { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
@@ -212,7 +222,9 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
         ? "Annotation"
         : kind === "image"
           ? "Image annotation"
-        : "Component"),
+          : kind === "line"
+            ? ""
+          : "Component"),
   html: false,
   fill: kind === "container" ? "#F8FAFC" : "#DDF4FF",
   border: kind === "container" ? "#597080" : "#5B9DBB",
@@ -448,7 +460,7 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
   const imageCentered = imagePosition === "center";
   const imageHorizontal = imagePosition === "left" || imagePosition === "right";
   const imageDirection = imagePosition === "right" ? "row-reverse" : imagePosition === "top" || imageCentered ? "column" : imagePosition === "bottom" ? "column-reverse" : "row";
-  const lineWidth = Number(data.width ?? 170), lineHeight = Number(data.height ?? 32), lineY = lineHeight / 2, lineArrowSize = 12, lineStart = data.lineArrow === "double" ? lineArrowSize : 4, lineEnd = data.lineArrow === "none" ? lineWidth - 4 : lineWidth - lineArrowSize;
+  const lineWidth = Number(data.width ?? 170), lineArrowSize = 12, lineStart = data.lineArrow === "double" ? lineArrowSize : 4, lineEnd = data.lineArrow === "none" ? lineWidth - 4 : lineWidth - lineArrowSize;
   const textAlignItems = data.vertical === "top" ? "flex-start" : data.vertical === "bottom" ? "flex-end" : "center";
   const textJustifyContent = data.align === "left" ? "flex-start" : data.align === "right" ? "flex-end" : "center";
   return (
@@ -486,7 +498,8 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
         overflow: data.kind === "container" && data.clipContent ? "hidden" : "visible",
       }}
      >
-        {data.kind === "line" && <svg className="line-face" viewBox={`0 0 ${lineWidth} ${lineHeight}`} preserveAspectRatio="none" aria-hidden="true"><line x1={lineStart} y1={lineY} x2={lineEnd} y2={lineY} stroke={data.lineStroke} strokeWidth={data.lineWidth} strokeDasharray={data.lineDashed ? `${data.lineDash ?? 6} ${data.lineGap ?? 5}` : undefined} vectorEffect="non-scaling-stroke" />{data.lineArrow !== "none" && <polygon points={`${lineWidth},${lineY} ${lineWidth - lineArrowSize},${lineY - lineArrowSize / 2} ${lineWidth - lineArrowSize},${lineY + lineArrowSize / 2}`} fill={data.lineStroke} />}{data.lineArrow === "double" && <polygon points={`0,${lineY} ${lineArrowSize},${lineY - lineArrowSize / 2} ${lineArrowSize},${lineY + lineArrowSize / 2}`} fill={data.lineStroke} />}</svg>}
+        {data.kind === "line" && <div className="line-face" aria-hidden="true"><span className="line-stroke" style={{ left: lineStart, right: lineWidth - lineEnd, top: "50%", borderTopWidth: data.lineWidth, borderTopStyle: data.lineDashed ? "dashed" : "solid", borderTopColor: data.lineStroke }} />{data.lineArrow !== "none" && <span className="line-arrow line-arrow-end" style={{ borderLeftColor: data.lineStroke }} />}{data.lineArrow === "double" && <span className="line-arrow line-arrow-start" style={{ borderLeftColor: data.lineStroke }} />}</div>}
+        {data.kind === "line" && data.label && <div className="line-label-box node-copy" style={{ background: rgba(data.fill, data.fillOpacity), borderColor: rgba(data.border, data.borderOpacity), borderWidth: data.borderWidth, borderStyle: data.borderStyle, borderRadius: data.radius, color: rgba(data.textColor, data.textOpacity), fontFamily: data.fontFamily, fontSize: data.fontSize, fontWeight: data.fontWeight, textAlign: data.align, padding: `${data.padding}px ${data.paddingX ?? data.padding}px` }} contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: data.lineLabelHtml ? DOMPurify.sanitize(data.label) : data.label.replaceAll("\n", "<br />") }} onBlur={(event) => updateLabel(data.lineLabelHtml ? event.currentTarget.innerHTML : event.currentTarget.textContent || "")} />}
         {data.kind === "diamond" && <svg className="diamond-face" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="50,1 99,50 50,99 1,50" fill={rgba(data.fill, data.fillOpacity)} stroke={rgba(data.border, data.borderOpacity)} strokeWidth={Math.max(1, data.borderWidth * 2)} strokeDasharray={data.borderStyle === "dashed" ? `${data.dashLength ?? 8} ${data.dashGap ?? 5}` : undefined} strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>}
        {data.kind === "container" && data.borderWidth > 0 && (
         <svg className="container-border" aria-hidden="true" width="100%" height="100%" preserveAspectRatio="none">
@@ -555,13 +568,13 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           <Handle type="source" position={Position.Right} id="right" />
         </>
       )}
-      {!(data.kind === "image" && !data.label.trim()) && <div
+      {data.kind !== "line" && !(data.kind === "image" && !data.label.trim()) && <div
         ref={input}
         className="node-copy"
         style={data.kind === "image" ? { display: "flex", flex: "1 1 auto", width: "auto", minWidth: 0, minHeight: 0, alignItems: textAlignItems, justifyContent: textJustifyContent } : undefined}
         contentEditable
         suppressContentEditableWarning
-         dangerouslySetInnerHTML={{ __html: data.kind === "line" ? DOMPurify.sanitize(data.label) : content }}
+         dangerouslySetInnerHTML={{ __html: content }}
         onDoubleClick={(e) => {
           e.stopPropagation();
           e.currentTarget.focus();
@@ -656,9 +669,19 @@ function SmartEdge({
         <EdgeLabelRenderer>
           <div
             className="edge-label nodrag nopan"
-            style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px) rotate(${labelAngle}deg)`,
-            }}
+             style={{
+               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px) rotate(${labelAngle}deg)`,
+               color: data?.labelColor ?? "#42606b",
+               background: data?.labelFill ?? "#fff",
+               borderColor: data?.labelBorder ?? "#c9d9dd",
+               borderWidth: data?.labelBorderWidth ?? 1,
+               borderRadius: data?.labelRadius ?? 0,
+               padding: `${data?.labelPadding ?? 3}px ${Math.max(4, (data?.labelPadding ?? 3) + 3)}px`,
+               fontFamily: data?.labelFontFamily ?? "DM Mono",
+               fontSize: data?.labelFontSize ?? 10,
+               fontWeight: data?.labelFontWeight ?? 400,
+               textAlign: data?.labelAlign ?? "center",
+             }}
             onDoubleClick={() => {
               const label = prompt("Connector label", data.label);
               if (label !== null)
@@ -1920,7 +1943,7 @@ function Editor({ project }: { project: Project }) {
                  {(selectedEdge
                    ? ["connector"]
                    : selected?.data.kind === "line"
-                     ? ["text", "appearance", "themes", "connector"]
+                     ? ["connector", "appearance", "themes"]
                      : ["text", "appearance", "themes"]
                  ).map((t) => (
                   <button
@@ -1928,7 +1951,7 @@ function Editor({ project }: { project: Project }) {
                     key={t}
                     onClick={() => setTab(t as typeof tab)}
                   >
-                    {t}
+                     {selected?.data.kind === "line" && t === "connector" ? "Text" : t}
                   </button>
                 ))}
               </div>
@@ -1962,6 +1985,16 @@ function Editor({ project }: { project: Project }) {
                      label: selected.data.label,
                      labelDirection: selected.data.lineLabelDirection,
                      labelHtml: selected.data.lineLabelHtml,
+                     labelColor: selected.data.textColor,
+                     labelFill: selected.data.fill,
+                     labelBorder: selected.data.border,
+                     labelBorderWidth: selected.data.borderWidth,
+                     labelRadius: selected.data.radius,
+                     labelPadding: selected.data.padding,
+                     labelFontFamily: selected.data.fontFamily,
+                     labelFontSize: selected.data.fontSize,
+                     labelFontWeight: selected.data.fontWeight,
+                     labelAlign: selected.data.align,
                    }}
                    update={(patch) => updateSelected({
                      ...(patch.route ? { lineRoute: patch.route } : {}),
@@ -1974,7 +2007,19 @@ function Editor({ project }: { project: Project }) {
                      ...(patch.label !== undefined ? { label: patch.label } : {}),
                      ...(patch.labelDirection ? { lineLabelDirection: patch.labelDirection } : {}),
                      ...(patch.labelHtml !== undefined ? { lineLabelHtml: patch.labelHtml } : {}),
+                     ...(patch.labelColor ? { textColor: patch.labelColor } : {}),
+                     ...(patch.labelFill ? { fill: patch.labelFill } : {}),
+                     ...(patch.labelBorder ? { border: patch.labelBorder } : {}),
+                     ...(patch.labelBorderWidth !== undefined ? { borderWidth: patch.labelBorderWidth } : {}),
+                     ...(patch.labelRadius !== undefined ? { radius: patch.labelRadius } : {}),
+                     ...(patch.labelPadding !== undefined ? { padding: patch.labelPadding } : {}),
+                     ...(patch.labelFontFamily ? { fontFamily: patch.labelFontFamily } : {}),
+                     ...(patch.labelFontSize !== undefined ? { fontSize: patch.labelFontSize } : {}),
+                     ...(patch.labelFontWeight !== undefined ? { fontWeight: patch.labelFontWeight } : {}),
+                     ...(patch.labelAlign ? { align: patch.labelAlign } : {}),
                    })}
+                   includeLabelColors={false}
+                   includeRouting={false}
                  />
                )}
                {selectedEdge && tab === "connector" && (
@@ -2171,7 +2216,7 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
           className={!html ? "active" : ""}
           onClick={() => {
             setHtml(false);
-            update({ html: false });
+             update({ html: false, ...(data.kind === "line" ? { lineLabelHtml: false } : {}) });
           }}
         >
           Text
@@ -2180,7 +2225,7 @@ function TextPanel({ data, update }: { data: NodeData; update: NodeUpdate }) {
           className={html ? "active" : ""}
           onClick={() => {
             setHtml(true);
-            update({ html: true });
+             update({ html: true, ...(data.kind === "line" ? { lineLabelHtml: true } : {}) });
           }}
         >
           HTML source
@@ -2421,6 +2466,16 @@ function AppearancePanel({
             <option value="solid">Solid</option><option value="dashed">Dashed</option>
           </select>
         </Field>
+        <Field label="Label direction">
+          <select value={data.lineLabelDirection ?? "horizontal"} onChange={(event) => update({ lineLabelDirection: event.target.value as NodeData["lineLabelDirection"] })}>
+            <option value="horizontal">Horizontal</option><option value="along">Along line</option><option value="vertical">Vertical</option>
+          </select>
+        </Field>
+        <Field label="Route">
+          <select value={data.lineRoute ?? "straight"} onChange={(event) => update({ lineRoute: event.target.value as NodeData["lineRoute"] })}>
+            <option value="straight">Straight</option><option value="orthogonal">Elbow</option><option value="free">Free</option>
+          </select>
+        </Field>
         {data.lineDashed && <div className="two-col">
           <Field label="Dash length"><input type="number" min="1" value={data.lineDash ?? 6} onChange={(event) => update({ lineDash: Math.max(1, +event.target.value) })} /></Field>
           <Field label="Gap"><input type="number" min="1" value={data.lineGap ?? 5} onChange={(event) => update({ lineGap: Math.max(1, +event.target.value) })} /></Field>
@@ -2430,7 +2485,7 @@ function AppearancePanel({
         <Field label="Fill">
           <ColorPicker value={data.fill} opacity={data.fillOpacity} onChange={(color, opacity) => update({ fill: color, fillOpacity: opacity })} />
         </Field>
-        <Field label="Border">
+      <Field label="Border">
           <ColorPicker value={data.border} opacity={data.borderOpacity} onChange={(color, opacity) => update({ border: color, borderOpacity: opacity })} />
         </Field>
         <Field label="Text">
@@ -2579,9 +2634,13 @@ function ThemePanel({ apply }: { apply: (theme: Theme) => void }) {
 function ConnectorPanel({
   data,
   update,
+  includeLabelColors = true,
+  includeRouting = true,
 }: {
   data: EdgeData;
   update: (p: Partial<EdgeData>) => void;
+  includeLabelColors?: boolean;
+  includeRouting?: boolean;
 }) {
   return (
     <div className="inspector-content">
@@ -2598,14 +2657,33 @@ function ConnectorPanel({
         <button className={data.labelHtml ? "active" : ""} onClick={() => update({ labelHtml: true })}>HTML source</button>
       </div>
       <p className="helper">Supports line breaks and sanitized HTML such as &lt;strong&gt;, &lt;em&gt;, lists, links and inline formatting.</p>
-      <div className="section-label">Label direction</div>
-      <div className="segmented">
+      <div className="section-label">Label appearance</div>
+       {includeLabelColors && <div className="color-row">
+        <Field label="Text color"><ColorPicker value={data.labelColor ?? "#42606b"} onChange={(color) => update({ labelColor: color })} /></Field>
+        <Field label="Fill"><ColorPicker value={data.labelFill ?? "#FFFFFF"} onChange={(color) => update({ labelFill: color })} /></Field>
+        <Field label="Border"><ColorPicker value={data.labelBorder ?? "#C9D9DD"} onChange={(color) => update({ labelBorder: color })} /></Field>
+       </div>}
+      <div className="two-col">
+        <Field label="Font size"><input type="number" min="8" max="48" value={data.labelFontSize ?? 10} onChange={(event) => update({ labelFontSize: Math.max(8, +event.target.value) })} /></Field>
+        <Field label="Weight"><select value={data.labelFontWeight ?? 400} onChange={(event) => update({ labelFontWeight: +event.target.value })}><option value="400">Regular</option><option value="500">Medium</option><option value="600">Semibold</option><option value="700">Bold</option></select></Field>
+      </div>
+      <div className="two-col">
+        <Field label="Padding"><input type="number" min="0" max="24" value={data.labelPadding ?? 3} onChange={(event) => update({ labelPadding: Math.max(0, +event.target.value) })} /></Field>
+        <Field label="Radius"><input type="number" min="0" max="24" value={data.labelRadius ?? 0} onChange={(event) => update({ labelRadius: Math.max(0, +event.target.value) })} /></Field>
+      </div>
+      <div className="two-col">
+        <Field label="Border width"><input type="number" min="0" max="6" step=".5" value={data.labelBorderWidth ?? 1} onChange={(event) => update({ labelBorderWidth: Math.max(0, +event.target.value) })} /></Field>
+        <Field label="Font family"><select value={data.labelFontFamily ?? "DM Mono"} onChange={(event) => update({ labelFontFamily: event.target.value })}><option>DM Mono</option><option>Arial</option><option>Inter</option><option>Roboto</option><option>Georgia</option></select></Field>
+      </div>
+      <Field label="Text alignment"><select value={data.labelAlign ?? "center"} onChange={(event) => update({ labelAlign: event.target.value as EdgeData["labelAlign"] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></Field>
+       {includeRouting && <div className="section-label">Label direction</div>}
+       {includeRouting && <div className="segmented">
         <button className={(data.labelDirection ?? "horizontal") === "horizontal" ? "active" : ""} onClick={() => update({ labelDirection: "horizontal" })}>Horizontal</button>
         <button className={data.labelDirection === "along" ? "active" : ""} onClick={() => update({ labelDirection: "along" })}>Along line</button>
         <button className={data.labelDirection === "vertical" ? "active" : ""} onClick={() => update({ labelDirection: "vertical" })}>Vertical</button>
-      </div>
-      <div className="section-label">Arrowhead</div>
-      <div className="segmented">
+       </div>}
+       {includeRouting && <div className="section-label">Arrowhead</div>}
+       {includeRouting && <div className="segmented">
         <button
           className={data.arrow === "none" ? "active" : ""}
           onClick={() => update({ arrow: "none" })}
@@ -2624,9 +2702,9 @@ function ConnectorPanel({
         >
           Double
         </button>
-      </div>
-      <div className="section-label">Route</div>
-      <div className="segmented">
+       </div>}
+       {includeRouting && <div className="section-label">Route</div>}
+       {includeRouting && <div className="segmented">
         <button
           className={data.route === "straight" ? "active" : ""}
           onClick={() => update({ route: "straight" })}
@@ -2645,7 +2723,7 @@ function ConnectorPanel({
         >
           Free
         </button>
-      </div>
+       </div>}
       <div className="color-row">
         <Field label="Line">
            <ColorPicker value={data.stroke} onChange={(color) => update({ stroke: color })} />

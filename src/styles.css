@@ -519,13 +519,33 @@ h2 {
   overflow: visible;
   pointer-events: none;
 }
+.line-stroke {
+  position: absolute;
+  display: block;
+  height: 0;
+  transform: translateY(-50%);
+}
+.line-arrow {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translateY(-50%);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 12px solid;
+}
+.line-arrow-end { right: 0; }
+.line-arrow-start { left: 0; transform: translateY(-50%) rotate(180deg); }
 .diagram-node.line .node-copy {
   position: relative;
   z-index: 1;
-  margin-top: 28px;
-  color: #60777e;
-  font: 10px "DM Mono";
-  text-align: center;
+}
+.line-label-box {
+  width: max-content !important;
+  max-width: 90%;
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 3px rgb(34 76 87 / 8%);
 }
 .image-node { gap: 10px; }
 .image-media { position: relative; overflow: hidden; min-width: 0; min-height: 0; }
