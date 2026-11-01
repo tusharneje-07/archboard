@@ -1003,9 +1003,24 @@ function PresentationView({ project }: { project: Project }) {
     </section>
   </main>;
 }
+function relativeUpdatedLabel(timestamp: number) {
+  const days = Math.floor(Math.max(0, Date.now() - timestamp) / 86_400_000);
+  if (days === 0) return "Updated recently";
+  if (days === 1) return "1 day ago";
+  if (days < 7) return `${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks} ${weeks === 1 ? "week" : "weeks"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} ${months === 1 ? "month" : "months"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} ${years === 1 ? "year" : "years"} ago`;
+}
 function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () => void }) {
   const [dialog, setDialog] = useState<{ type: "rename" | "delete"; project: Project } | null>(null);
   const [draftName, setDraftName] = useState("");
+  const [importNotice, setImportNotice] = useState("");
+  const importInput = useRef<HTMLInputElement>(null);
+  const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
   const createProject = () => {
     const now = Date.now(), project: Project = { id: `project-${now}`, name: "Untitled architecture", nodes: [], edges: [], createdAt: now, updatedAt: now };
     writeProjects([project, ...projects]);
@@ -1019,6 +1034,28 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
     refresh();
   };
   const deleteProject = (project: Project) => setDialog({ type: "delete", project });
+  const importProjects = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+    const imported: Project[] = [];
+    const failures: string[] = [];
+    for (const [index, file] of files.entries()) {
+      try {
+        const parsed = JSON.parse(await file.text()) as { nodes?: unknown[]; edges?: unknown[] };
+        if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) throw new Error("missing nodes or edges arrays");
+        const now = Date.now() + index;
+        imported.push({ id: `project-${now}`, name: file.name.replace(/\.json$/i, "") || "Untitled architecture", nodes: normalizeDiagramNodes(parsed.nodes), edges: normalizeDiagramEdges(parsed.edges), createdAt: now, updatedAt: now });
+      } catch (error) {
+        failures.push(`${file.name}: ${error instanceof Error ? error.message : "invalid JSON"}`);
+      }
+    }
+    if (imported.length) {
+      writeProjects([...imported, ...projects]);
+      refresh();
+    }
+    setImportNotice(`${imported.length} imported${failures.length ? `, ${failures.length} failed` : ""}${failures.length ? ` (${failures.join("; ")})` : "."}`);
+    event.target.value = "";
+  };
   const closeDialog = () => setDialog(null);
   const submitDialog = () => {
     if (!dialog) return;
@@ -1031,9 +1068,9 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
     closeDialog();
   };
   return <main className="project-home">
-    <header className="home-header"><div className="brand-mark"><span className="brand-glyph"><Square size={18} /></span><div><strong>archboard</strong><small>systems, clearly</small></div></div><button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button></header>
-    <section className="home-content"><div className="home-intro"><div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p></div><span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></div>
-      <div className="project-grid">{projects.map((project) => <article className="project-card" key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}><button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button><div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodes.length} elements · Edited {new Date(project.updatedAt).toLocaleDateString()}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div></article>)}</div>
+     <header className="home-header"><div className="brand-mark"><span className="brand-glyph"><Square size={18} /></span><div><strong>archboard</strong><small>systems, clearly</small></div></div><div className="home-actions"><button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Multi Import</button><button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button><input ref={importInput} hidden type="file" accept=".json,application/json" multiple onChange={(event) => void importProjects(event)} /></div></header>
+     <section className="home-content"><div className="home-intro"><div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p>{importNotice && <p className="import-notice">{importNotice}</p>}</div><span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></div>
+       <div className="project-grid">{sortedProjects.map((project) => <article className="project-card" key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}><button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button><div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodes.length} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div></article>)}</div>
     </section>
     {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialog.type === "rename" ? "Project name" : "Delete project"}</span><h2>{dialog.type === "rename" ? "Rename project" : `Delete “${dialog.project.name}”?`}</h2>{dialog.type === "rename" ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>This project and its local diagram data will be removed.</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialog.type === "delete" ? "danger" : "primary"} onClick={submitDialog}>{dialog.type === "rename" ? "Save name" : "Delete project"}</button></div></div></div>}
   </main>;
@@ -1682,7 +1719,7 @@ function Editor({ project }: { project: Project }) {
         type: "application/json",
       }),
     );
-    a.download = "archboard-diagram.json";
+    a.download = `${project.name.replace(/[\\/:*?"<>|]+/g, "-").trim() || "archboard-diagram"}.json`;
     a.click();
   };
   const selectSingleNode = (id: string) => {
