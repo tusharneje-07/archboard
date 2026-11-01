@@ -5,3 +5,5 @@ demo_auth_tokens:
     description: Default Archboard demo token
   - token: archboard-demo-2026
     description: Archboard demo token for 2026
+  - token: 3cbc777826737fe53d3967f16c39ca88
+    description: for alpha-tester sandesh-pol
