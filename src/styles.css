@@ -202,6 +202,8 @@ button {
 .project-dialog-actions .danger { color: #fff; background: #b34d4d; border-color: #b34d4d; }
 .code-panel { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; height: auto; }
 .code-panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.code-panel-actions { display: flex; align-items: center; gap: 6px; }
+.code-panel-actions .quiet { display: inline-flex; align-items: center; gap: 5px; }
 .code-panel-head strong { display: block; margin-top: 4px; color: #244754; font-size: 14px; }
 .code-panel-head .quiet { padding: 4px 6px; color: #4e7d88; font: 10px "DM Mono"; border: 1px solid #d1e1e3; border-radius: 3px; }
 .diagram-code-editor { width: 100%; min-height: 0; flex: 1; resize: none; padding: 12px; color: #294957; background: #f7fbfb; border: 1px solid #c6dadd; border-radius: 4px; outline: none; font: 11px/1.55 "DM Mono", monospace; tab-size: 2; }
@@ -211,6 +213,14 @@ button {
 .code-error { margin: 0; padding: 8px 9px; color: #9b3f48; background: #fff0f1; border: 1px solid #f0c4c8; border-radius: 3px; font: 10px/1.4 "DM Mono"; }
 .code-apply { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 10px; color: #fff; background: #00546d; border: 1px solid #00546d; border-radius: 3px; font-size: 11px; }
 .code-apply:hover { background: #006c88; }
+.code-fullscreen-backdrop { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 24px; background: rgb(18 39 46 / 48%); }
+.code-fullscreen { display: flex; flex-direction: column; width: min(1180px, 100%); height: min(860px, 94vh); min-height: 0; overflow: hidden; background: #fff; border: 1px solid #d7e3e5; border-radius: 8px; box-shadow: 0 24px 80px rgb(15 48 58 / 28%); }
+.code-fullscreen-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #dce7e8; }
+.code-fullscreen-head h2 { margin: 4px 0 0; font-size: 20px; }
+.code-fullscreen-editor { flex: 1; min-height: 0; overflow: hidden; background: #f8fbfb; }
+.code-fullscreen-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px; border-top: 1px solid #dce7e8; }
+.code-fullscreen-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 13px; color: #64777f; border: 1px solid #d2e0e2; border-radius: 3px; font-size: 11px; }
+.code-fullscreen-actions .primary { color: #fff; background: #00546d; border-color: #00546d; }
 .workspace {
   display: flex;
   flex: 1;

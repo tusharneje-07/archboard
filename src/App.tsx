@@ -51,6 +51,7 @@ import {
   Home,
   Image as ImageIcon,
   Link2,
+  Maximize2,
   Minus,
   MousePointer2,
   PanelRight,
@@ -1072,6 +1073,7 @@ function Editor({ project }: { project: Project }) {
     [importError, setImportError] = useState(""),
      [codeDraft, setCodeDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
      [codeError, setCodeError] = useState(""),
+      [codeFullscreen, setCodeFullscreen] = useState(false),
      [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; nodeIds: string[] } | null>(null),
      [codeHighlightId, setCodeHighlightId] = useState(""),
      [codeEditorReady, setCodeEditorReady] = useState(0);
@@ -1709,6 +1711,22 @@ function Editor({ project }: { project: Project }) {
     URL.revokeObjectURL(anchor.href);
     setContextMenu(null);
   };
+  const changeLayerOrder = (ids: string[], mode: "front" | "back" | "forward" | "backward") => {
+    const selectedIds = new Set(ids);
+    if (!selectedIds.size) return;
+    snapshot();
+    setNodes((items) => {
+      const zIndexes = items.map((item) => Number(item.zIndex ?? 0));
+      const highest = Math.max(...zIndexes, 0), lowest = Math.min(...zIndexes, 0);
+      return items.map((item) => {
+        if (!selectedIds.has(item.id)) return item;
+        const current = Number(item.zIndex ?? 0);
+        const zIndex = mode === "front" ? highest + 1 : mode === "back" ? lowest - 1 : mode === "forward" ? current + 1 : current - 1;
+        return { ...item, zIndex };
+      });
+    });
+    setContextMenu(null);
+  };
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1784,18 +1802,18 @@ function Editor({ project }: { project: Project }) {
               </button>
             ))}
            </div></>}
-           {leftTab === "code" && <div className="code-panel">
-             <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button></div>
-              <MonacoEditor
-                className="diagram-monaco-editor"
-                height="100%"
+             {leftTab === "code" && <div className="code-panel">
+              <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><div className="code-panel-actions"><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button><button className="quiet" onClick={() => setCodeFullscreen(true)} title="Open code in full screen"><Maximize2 size={14} /> Full screen</button></div></div>
+               {!codeFullscreen && <MonacoEditor
+                 className="diagram-monaco-editor"
+                 height="100%"
                 language="json"
                 theme="light"
                 value={codeDraft}
                 onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }}
                 onChange={(value) => setCodeDraft(value ?? "")}
-                options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 12, lineNumbers: "on", folding: true, wordWrap: "on", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
-              />
+                 options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
+               />}
              {codeError && <p className="code-error">{codeError}</p>}
              <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button>
            </div>}
@@ -1926,6 +1944,10 @@ function Editor({ project }: { project: Project }) {
             {contextMenu && <div className="shape-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
               <button onClick={() => showNodeInCode(contextMenu.nodeId)}><FileJson size={14} /> Show in Code Pane</button>
               {contextMenu.nodeIds.length === 1 && <button onClick={() => { selectSingleNode(contextMenu.nodeId); setTab("appearance"); setContextMenu(null); }}><PanelRight size={14} /> Edit Properties</button>}
+              <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "front")}><ChevronUp size={14} /> Bring to Front</button>
+              <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "back")}><ChevronDown size={14} /> Bring to Back</button>
+              <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "forward")}><ChevronUp size={14} /> Move Front</button>
+              <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "backward")}><ChevronDown size={14} /> Move Back</button>
               <button onClick={() => exportSelectedJson(contextMenu.nodeIds)}><Download size={14} /> Export Shape(s)</button>
             </div>}
             <div className="canvas-history">
@@ -2098,8 +2120,16 @@ function Editor({ project }: { project: Project }) {
             {importError && <p className="code-error">{importError}</p>}
             <div className="import-actions"><button onClick={() => setImportOpen(false)}>Cancel</button><button className="primary" onClick={() => applyDiagramJson(importDraft, true)}><Upload size={15} /> Upload JSON</button></div>
          </section>
-       </div>}
-    </main>
+        </div>}
+        {codeFullscreen && <div className="code-fullscreen-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCodeFullscreen(false)}>
+          <section className="code-fullscreen" role="dialog" aria-modal="true" aria-labelledby="fullscreen-code-title">
+            <header className="code-fullscreen-head"><div><span className="eyebrow">Editable source</span><h2 id="fullscreen-code-title">Diagram JSON</h2></div><div className="code-panel-actions"><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }}>Refresh</button><button className="quiet" onClick={() => setCodeFullscreen(false)} title="Close full screen"><X size={16} /> Close</button></div></header>
+            <div className="code-fullscreen-editor"><MonacoEditor height="100%" language="json" theme="light" value={codeDraft} onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }} onChange={(value) => setCodeDraft(value ?? "")} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 14, bottom: 14 } }} /></div>
+            {codeError && <p className="code-error">{codeError}</p>}
+            <footer className="code-fullscreen-actions"><button onClick={() => setCodeFullscreen(false)}>Close</button><button className="primary" onClick={() => { applyDiagramJson(codeDraft); setCodeFullscreen(false); }}><FileJson size={14} /> Apply JSON</button></footer>
+          </section>
+        </div>}
+     </main>
   );
 }
 
