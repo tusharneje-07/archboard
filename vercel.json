@@ -2,9 +2,23 @@
   "functions": {
     "api/mcp.ts": {
       "includeFiles": "SKILL.md"
+    },
+    "api/view-archboard-dig.ts": {
+      "includeFiles": [
+        "demo_auth_tokens.yaml",
+        "dist/index.html"
+      ]
     }
   },
   "rewrites": [
+    {
+      "source": "/view-archboard-dig",
+      "destination": "/api/view-archboard-dig"
+    },
+    {
+      "source": "/view-archboard-dig/",
+      "destination": "/api/view-archboard-dig"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

@@ -1,0 +1,7 @@
+# Demo-only auth tokens for PUT /view-archboard-dig.
+# Replace these values before using the endpoint outside a demo environment.
+demo_auth_tokens:
+  - token: archboard-demo-token
+    description: Default Archboard demo token
+  - token: archboard-demo-2026
+    description: Archboard demo token for 2026
