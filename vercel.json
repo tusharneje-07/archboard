@@ -4,10 +4,7 @@
       "includeFiles": "SKILL.md"
     },
     "api/view-archboard-dig.ts": {
-      "includeFiles": [
-        "demo_auth_tokens.yaml",
-        "dist/index.html"
-      ]
+      "includeFiles": "{demo_auth_tokens.yaml,dist/index.html}"
     }
   },
   "rewrites": [
