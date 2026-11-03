@@ -27,6 +27,8 @@ import {
   type EdgeProps,
   type Node,
   type NodeProps,
+  type ReactFlowInstance,
+  type Viewport,
 } from "@xyflow/react";
 import {
   AlignCenter,
@@ -150,6 +152,67 @@ type EdgeData = {
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramSnapshot = { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
 type Project = DiagramSnapshot & { id: string; name: string; createdAt: number; updatedAt: number };
+type CanvasFlow = Pick<ReactFlowInstance, "getViewport" | "setViewport">;
+type WheelEventWithLegacyDeltas = WheelEvent & { wheelDeltaY?: number };
+const clampZoom = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+function isTrackpadWheel(event: WheelEvent) {
+  if (event.deltaMode !== 0) return false;
+  if (event.deltaX !== 0 || !Number.isInteger(event.deltaY)) return true;
+  const legacy = event as WheelEventWithLegacyDeltas;
+  if (/Mac|iPhone|iPad|iPod/.test(navigator.platform) && typeof legacy.wheelDeltaY === "number") {
+    if (Math.abs(legacy.wheelDeltaY + event.deltaY * 3) < 1) return true;
+    return Math.abs(legacy.wheelDeltaY) < 100;
+  }
+  return Math.abs(event.deltaY) < 80;
+}
+function wheelPixels(value: number, mode: number, pageSize: number) {
+  return value * (mode === 1 ? 16 : mode === 2 ? pageSize : 1);
+}
+function useCanvasWheelNavigation(reactFlow: CanvasFlow, target: { current: HTMLElement | null }, minZoom: number, maxZoom: number) {
+  useEffect(() => {
+    const element = target.current;
+    if (!element) return;
+    let frame: number | null = null;
+    let pending: Viewport | null = null;
+    const apply = () => {
+      frame = null;
+      const viewport = pending;
+      pending = null;
+      if (viewport) void reactFlow.setViewport(viewport);
+    };
+    const schedule = (viewport: Viewport) => {
+      pending = viewport;
+      if (frame === null) frame = window.requestAnimationFrame(apply);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest(".nowheel, .react-flow__minimap, .react-flow__controls, .shape-context-menu, .selection-toolbar, .canvas-history, .panel-reopen")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const current = pending ?? reactFlow.getViewport();
+      if (!event.ctrlKey && isTrackpadWheel(event)) {
+        const pageSize = element.clientHeight || 800;
+        schedule({ x: current.x - wheelPixels(event.deltaX, event.deltaMode, pageSize), y: current.y - wheelPixels(event.deltaY, event.deltaMode, pageSize), zoom: current.zoom });
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      const pointerX = event.clientX - rect.left;
+      const pointerY = event.clientY - rect.top;
+      const baseDelta = event.deltaMode === 1 ? event.deltaY * 0.05 : event.deltaMode === 2 ? event.deltaY : event.deltaY * 0.002;
+      const pinchLike = event.ctrlKey && Math.abs(event.deltaY) < 50;
+      const zoomDelta = Math.max(-0.5, Math.min(0.5, baseDelta * (pinchLike ? 5 : 1)));
+      const nextZoom = clampZoom(current.zoom * Math.pow(2, -zoomDelta), minZoom, maxZoom);
+      if (nextZoom === current.zoom) return;
+      const worldX = (pointerX - current.x) / current.zoom;
+      const worldY = (pointerY - current.y) / current.zoom;
+      schedule({ x: pointerX - worldX * nextZoom, y: pointerY - worldY * nextZoom, zoom: nextZoom });
+    };
+    element.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => {
+      element.removeEventListener("wheel", onWheel, { capture: true });
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [maxZoom, minZoom, reactFlow, target]);
+}
 const normalizeDiamondNode = (node: Node<NodeData>): Node<NodeData> => {
   if (node.data.kind !== "diamond") return node;
   const width = Number(node.style?.width ?? node.data.width ?? 120), height = Number(node.style?.height ?? node.data.height ?? 120), size = Math.max(60, width, height);
@@ -828,6 +891,7 @@ function PresentationView({ project, showExit = true }: { project: Project; show
   const laserTrail = useRef<HTMLCanvasElement>(null);
   const laser = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
+  useCanvasWheelNavigation(reactFlow, surface, 0.5, 2);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
   const pendingPoint = useRef<{ x: number; y: number } | null>(null);
   const frame = useRef<number | null>(null);
@@ -1021,11 +1085,11 @@ function PresentationView({ project, showExit = true }: { project: Project; show
   return <main className="presentation-shell">
     <header className={`presentation-toolbar ${toolbarCollapsed ? "collapsed" : ""}`}><div className="presentation-brand"><PresentationIcon size={17} /><strong>{project.name}</strong></div><div className="presentation-tools"><button className={tool === "laser" ? "active laser-tool" : ""} onClick={() => setTool("laser")} title="Red laser pointer (L)"><span className="laser-tool-dot" /> Laser</button><button className={tool === "pencil" ? "active" : ""} onClick={() => setTool("pencil")} title="Pencil (P)"><PenLine size={15} /> Pencil</button><button className={tool === "highlighter" ? "active" : ""} onClick={() => setTool("highlighter")} title="Highlighter (H)"><Highlighter size={15} /> Highlighter</button><button className={tool === "eraser" ? "active" : ""} onClick={() => setTool("eraser")} title="Eraser (E)"><Eraser size={15} /> Eraser</button><label className="presentation-color">Color <input type="color" value={tool === "highlighter" ? highlighterColor : pencilColor} disabled={tool === "laser" || tool === "eraser"} onChange={(event) => tool === "highlighter" ? setHighlighterColor(event.target.value) : setPencilColor(event.target.value)} /></label><label className="presentation-thickness">Size <input type="range" min="1" max="16" value={inkSize} onChange={(event) => setInkSize(+event.target.value)} /><b>{inkSize}px</b><small>[ ]</small></label><button onClick={clearAnnotations} title="Clear annotations"><Eraser size={15} /> Clear</button>{showExit && <button onClick={() => window.close()} title="Close presentation"><X size={16} /> Exit</button>}<button className="presentation-collapse" onClick={() => setToolbarCollapsed((collapsed) => !collapsed)} title={toolbarCollapsed ? "Expand toolbar" : "Collapse toolbar"}>{toolbarCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button></div></header>
     <section className="presentation-stage" ref={surface} onPointerMove={tool === "laser" ? onPointerMove : undefined} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; }}>
-      <ReactFlow className="presentation-flow" nodes={presentationNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView onlyRenderVisibleElements={false} nodesConnectable={false} nodesDraggable={false} nodesFocusable={false} elementsSelectable={false} panOnDrag panActivationKeyCode="Space" zoomOnScroll zoomOnPinch zoomOnDoubleClick={false} defaultEdgeOptions={{ type: "smart" }}>
+      <ReactFlow className="presentation-flow" nodes={presentationNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView onlyRenderVisibleElements={false} nodesConnectable={false} nodesDraggable={false} nodesFocusable={false} elementsSelectable={false} panOnDrag panActivationKeyCode="Space" zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false} defaultEdgeOptions={{ type: "smart" }}>
         <Background gap={20} size={2} color="#d7e2e4" />
         <MiniMap nodeColor={(node) => (node.data as NodeData).fill} />
       </ReactFlow>
-      <canvas ref={drawing} className={`presentation-ink ${spaceHeld ? "space-held" : tool === "laser" ? "laser-active" : "drawing"}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; if (tool !== "laser") endStroke(); }} onWheelCapture={(event) => { event.preventDefault(); const nextZoom = reactFlow.getZoom() * (event.deltaY < 0 ? 1.1 : 0.9); reactFlow.zoomTo(Math.max(0.1, Math.min(4, nextZoom))); }} />
+      <canvas ref={drawing} className={`presentation-ink ${spaceHeld ? "space-held" : tool === "laser" ? "laser-active" : "drawing"}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; if (tool !== "laser") endStroke(); }} />
       <canvas ref={laserTrail} className="presentation-laser-trail" />
       <div ref={laser} className="presentation-laser" style={{ width: laserMarkerSize, height: laserMarkerSize }} />
     </section>
@@ -1145,6 +1209,7 @@ function Editor({ project }: { project: Project }) {
   const reactFlow = useReactFlow(),
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false);
+  useCanvasWheelNavigation(reactFlow, canvas, 0.5, 2);
   const layerRoot = useRef<Root | null>(null);
   const layerHost = useRef<HTMLDivElement | null>(null);
   const codeEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -1987,6 +2052,7 @@ function Editor({ project }: { project: Project }) {
                 }}
                panOnDrag={[1]}
               panActivationKeyCode="Space"
+              zoomOnScroll={false}
               selectionOnDrag
               selectionMode={SelectionMode.Partial}
               snapToGrid={snap}
