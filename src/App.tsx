@@ -2062,6 +2062,7 @@ function Editor({ project }: { project: Project }) {
               snapToGrid={snap}
               snapGrid={[16, 16]}
               fitView
+              proOptions={{ hideAttribution: true }}
               defaultEdgeOptions={{ type: "smart" }}
             >
               <Background
