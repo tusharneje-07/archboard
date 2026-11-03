@@ -1,6 +1,6 @@
 # `/view-archboard-dig` API
 
-Upload an Archboard JSON diagram with a demo token and open it directly in presentation mode.
+Upload an Archboard JSON diagram with a demo token and open it directly in presentation mode. Presentation chrome is off by default and can be enabled per request.
 
 The route accepts `PUT` requests for uploads and `GET` requests for the presentation page. Uploaded diagrams are not persisted on the server. The upload response redirects to a URL containing the diagram payload in the URL fragment, so the presentation URL is self-contained.
 
@@ -35,6 +35,7 @@ The preferred request is `multipart/form-data` with a JSON file and the token.
 ```bash
 curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
   -F "auth_token=archboard-demo-token" \
+  -F "presentation=true" \
   -F "file=@architecture.json;type=application/json"
 ```
 
@@ -59,6 +60,7 @@ curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
   -d '{
     "auth_token": "archboard-demo-token",
     "name": "Payments architecture",
+    "presentation": true,
     "nodes": [],
     "edges": []
   }'
@@ -68,6 +70,8 @@ The body can contain either:
 
 - `diagram: { nodes, edges }`, or
 - top-level `nodes` and `edges` arrays.
+
+The optional `presentation` field accepts `true` or `false` and defaults to `false`. It controls whether the presentation toolbar and annotation tools are shown. Invalid values return `400 Bad Request`.
 
 ### JSON response
 
@@ -80,6 +84,7 @@ curl -X PUT "https://archboard-iota.vercel.app/view-archboard-dig?response=json"
   -d '{
     "auth_token": "archboard-demo-token",
     "name": "Payments architecture",
+    "presentation": true,
     "nodes": [],
     "edges": []
   }'
@@ -89,6 +94,7 @@ curl -X PUT "https://archboard-iota.vercel.app/view-archboard-dig?response=json"
 {
   "ok": true,
   "name": "Payments architecture",
+  "presentation": true,
   "nodes": 0,
   "edges": 0,
   "viewUrl": "/view-archboard-dig#data=..."
@@ -105,9 +111,11 @@ curl -i https://archboard-iota.vercel.app/view-archboard-dig
 
 The presentation view for this route:
 
-- Opens in presentation mode by default.
-- Keeps the laser, pencil, highlighter, eraser, color, size, and clear controls.
+- Hides the top bar and disables the laser, pencil, highlighter, eraser, color, size, clear controls, and keyboard shortcuts by default.
+- Shows the toolbar and annotation tools when the uploaded payload was created with `presentation: true`.
 - Does **not** render the presentation Exit button.
+- Hides the React Flow attribution and the MiniMap viewport preview.
+- Omits top-level unlabeled Frame/container shapes so the diagram fills the stage.
 
 ## Naming
 
@@ -123,6 +131,7 @@ For JSON requests, use the optional `name` field. If no name is provided, the ti
 - The diagram must contain `nodes` and `edges` arrays.
 - Every node must have an `id` and a numeric `position.x` / `position.y`.
 - Every edge must have string `source` and `target` values.
+- `presentation`, when supplied, must be `true` or `false`.
 
 ## Status codes
 
@@ -130,7 +139,7 @@ For JSON requests, use the optional `name` field. If no name is provided, the ti
 | --- | --- |
 | `200` | JSON response returned successfully. |
 | `303` | Upload accepted; redirect to the presentation URL. |
-| `400` | Invalid diagram or request body. |
+| `400` | Invalid diagram, request body, or `presentation` value. |
 | `401` | Missing or invalid `auth_token`. |
 | `405` | Method is not `PUT`, `GET`, or `OPTIONS`. |
 | `413` | Upload exceeds the 5 MB limit. |
