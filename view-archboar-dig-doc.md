@@ -41,6 +41,15 @@ curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
 
 Accepted file field names: `file`, `json`, `diagram_file`, or `json_file`.
 
+To hide the top bar and annotation tools, send `presentation=false` or omit the field:
+
+```bash
+curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
+  -F "auth_token=archboard-demo-token" \
+  -F "presentation=false" \
+  -F "file=@architecture.json;type=application/json"
+```
+
 On success the browser/API client receives `303 See Other` with a `Location` header like:
 
 ```text
@@ -72,6 +81,21 @@ The body can contain either:
 - top-level `nodes` and `edges` arrays.
 
 The optional `presentation` field accepts `true` or `false` and defaults to `false`. It controls whether the presentation toolbar and annotation tools are shown. Invalid values return `400 Bad Request`.
+
+To hide the top bar and annotation tools, set `presentation` to `false` or omit it:
+
+```bash
+curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "auth_token": "archboard-demo-token",
+    "name": "Payments architecture",
+    "presentation": false,
+    "nodes": [],
+    "edges": []
+  }'
+```
 
 ### JSON response
 
