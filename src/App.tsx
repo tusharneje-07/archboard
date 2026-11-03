@@ -151,7 +151,7 @@ type EdgeData = {
 };
 type Theme = { name: string; fill: string; border: string; text: string };
 type DiagramSnapshot = { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] };
-type Project = DiagramSnapshot & { id: string; name: string; createdAt: number; updatedAt: number };
+type Project = DiagramSnapshot & { id: string; name: string; createdAt: number; updatedAt: number; presentation?: boolean };
 type CanvasFlow = Pick<ReactFlowInstance, "getViewport" | "setViewport">;
 type WheelEventWithLegacyDeltas = WheelEvent & { wheelDeltaY?: number };
 const clampZoom = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -476,12 +476,12 @@ function readViewProject(hash: string): Project | null {
   const encoded = new URLSearchParams(hash.replace(/^#/, "")).get("data");
   if (!encoded) return null;
   try {
-    const payload = decodeViewPayload(encoded) as { name?: unknown; nodes?: unknown; edges?: unknown };
+    const payload = decodeViewPayload(encoded) as { name?: unknown; presentation?: unknown; nodes?: unknown; edges?: unknown };
     if (!Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) return null;
     const nodes = normalizeLoadedNodes(normalizeDiagramNodes(payload.nodes));
     const edges = normalizeDiagramEdges(payload.edges.map((edge, index) => edge && typeof edge === "object" && typeof (edge as { id?: unknown }).id !== "string" ? { ...edge, id: `view-edge-${index}` } : edge));
     const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "Uploaded architecture";
-    return { id: "view-archboard-dig", name, nodes, edges, createdAt: Date.now(), updatedAt: Date.now() };
+    return { id: "view-archboard-dig", name, presentation: payload.presentation === true, nodes, edges, createdAt: Date.now(), updatedAt: Date.now() };
   } catch {
     return null;
   }
@@ -863,7 +863,7 @@ function App() {
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
   if (/^\/view-archboard-dig\/?$/.test(path)) {
     const project = readViewProject(hash);
-    return project ? <ReactFlowProvider><PresentationView project={project} showExit={false} /></ReactFlowProvider> : <div className="presentation-missing">No uploaded diagram found. Send a PUT request to <code>/view-archboard-dig</code> with a JSON file and auth_token.</div>;
+    return project ? <ReactFlowProvider><PresentationView project={project} showExit={false} showToolbar={project.presentation === true} /></ReactFlowProvider> : <div className="presentation-missing">No uploaded diagram found. Send a PUT request to <code>/view-archboard-dig</code> with a JSON file and auth_token.</div>;
   }
   if (presentationId) {
     const project = projects.find((item) => item.id === presentationId);
@@ -878,7 +878,7 @@ function App() {
   return <ReactFlowProvider><Editor key={project.id} project={project} /></ReactFlowProvider>;
 }
 type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
-function PresentationView({ project, showExit = true }: { project: Project; showExit?: boolean }) {
+function PresentationView({ project, showExit = true, showToolbar = true }: { project: Project; showExit?: boolean; showToolbar?: boolean }) {
   const reactFlow = useReactFlow();
    const [tool, setTool] = useState<PresentationTool>("laser");
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -924,7 +924,8 @@ function PresentationView({ project, showExit = true }: { project: Project; show
       absolutePositions.set(node.id, position);
       return position;
     };
-    return project.nodes.map((node) => {
+    const hiddenFrameIds = new Set(project.nodes.filter((node) => node.data.kind === "container" && !node.parentId && !String(node.data.label ?? "").trim()).map((node) => node.id));
+    return project.nodes.filter((node) => !hiddenFrameIds.has(node.id)).map((node) => {
       const { parentId: _parentId, extent: _extent, measured: _measured, ...flatNode } = node;
       return {
       ...flatNode,
@@ -964,6 +965,7 @@ function PresentationView({ project, showExit = true }: { project: Project; show
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("blur", onBlur); };
   }, []);
   useEffect(() => {
+    if (!showToolbar) return;
     const onShortcut = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key.toLowerCase() === "l") setTool("laser");
@@ -977,7 +979,7 @@ function PresentationView({ project, showExit = true }: { project: Project; show
     };
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, []);
+  }, [showToolbar]);
   useEffect(() => {
     const canvas = drawing.current;
     const trail = laserTrail.current;
@@ -1001,6 +1003,7 @@ function PresentationView({ project, showExit = true }: { project: Project; show
     return () => window.removeEventListener("resize", resize);
   }, []);
   useEffect(() => {
+    if (!showToolbar) return;
     const clearTrail = (animate = false) => {
       const trail = laserTrail.current;
       if (!trail) return;
@@ -1040,7 +1043,7 @@ function PresentationView({ project, showExit = true }: { project: Project; show
     };
     window.addEventListener("pointermove", move);
     return () => { window.removeEventListener("pointermove", move); if (laserTimeout.current !== null) window.clearTimeout(laserTimeout.current); if (laserTrailTimeout.current !== null) window.clearTimeout(laserTrailTimeout.current); if (laserWipeTimeout.current !== null) window.clearTimeout(laserWipeTimeout.current); clearTrail(); };
-  }, [inkSize, laserMarkerSize, spaceHeld, tool]);
+  }, [inkSize, laserMarkerSize, showToolbar, spaceHeld, tool]);
   const drawPending = () => {
     frame.current = null;
     const point = pendingPoint.current, previous = lastPoint.current, context = drawing.current?.getContext("2d");
@@ -1083,15 +1086,16 @@ function PresentationView({ project, showExit = true }: { project: Project; show
   const clearAnnotations = () => { const context = drawing.current?.getContext("2d"); if (context && drawing.current) context.clearRect(0, 0, drawing.current.width, drawing.current.height); const trailContext = laserTrail.current?.getContext("2d"); if (trailContext && laserTrail.current) trailContext.clearRect(0, 0, laserTrail.current.width, laserTrail.current.height); };
   const presentationNodes = nodes;
   return <main className="presentation-shell">
-    <header className={`presentation-toolbar ${toolbarCollapsed ? "collapsed" : ""}`}><div className="presentation-brand"><PresentationIcon size={17} /><strong>{project.name}</strong></div><div className="presentation-tools"><button className={tool === "laser" ? "active laser-tool" : ""} onClick={() => setTool("laser")} title="Red laser pointer (L)"><span className="laser-tool-dot" /> Laser</button><button className={tool === "pencil" ? "active" : ""} onClick={() => setTool("pencil")} title="Pencil (P)"><PenLine size={15} /> Pencil</button><button className={tool === "highlighter" ? "active" : ""} onClick={() => setTool("highlighter")} title="Highlighter (H)"><Highlighter size={15} /> Highlighter</button><button className={tool === "eraser" ? "active" : ""} onClick={() => setTool("eraser")} title="Eraser (E)"><Eraser size={15} /> Eraser</button><label className="presentation-color">Color <input type="color" value={tool === "highlighter" ? highlighterColor : pencilColor} disabled={tool === "laser" || tool === "eraser"} onChange={(event) => tool === "highlighter" ? setHighlighterColor(event.target.value) : setPencilColor(event.target.value)} /></label><label className="presentation-thickness">Size <input type="range" min="1" max="16" value={inkSize} onChange={(event) => setInkSize(+event.target.value)} /><b>{inkSize}px</b><small>[ ]</small></label><button onClick={clearAnnotations} title="Clear annotations"><Eraser size={15} /> Clear</button>{showExit && <button onClick={() => window.close()} title="Close presentation"><X size={16} /> Exit</button>}<button className="presentation-collapse" onClick={() => setToolbarCollapsed((collapsed) => !collapsed)} title={toolbarCollapsed ? "Expand toolbar" : "Collapse toolbar"}>{toolbarCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button></div></header>
-    <section className="presentation-stage" ref={surface} onPointerMove={tool === "laser" ? onPointerMove : undefined} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; }}>
-      <ReactFlow className="presentation-flow" nodes={presentationNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView onlyRenderVisibleElements={false} nodesConnectable={false} nodesDraggable={false} nodesFocusable={false} elementsSelectable={false} panOnDrag panActivationKeyCode="Space" zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false} defaultEdgeOptions={{ type: "smart" }}>
+    {showToolbar && <header className={`presentation-toolbar ${toolbarCollapsed ? "collapsed" : ""}`}><div className="presentation-brand"><PresentationIcon size={17} /><strong>{project.name}</strong></div><div className="presentation-tools"><button className={tool === "laser" ? "active laser-tool" : ""} onClick={() => setTool("laser")} title="Red laser pointer (L)"><span className="laser-tool-dot" /> Laser</button><button className={tool === "pencil" ? "active" : ""} onClick={() => setTool("pencil")} title="Pencil (P)"><PenLine size={15} /> Pencil</button><button className={tool === "highlighter" ? "active" : ""} onClick={() => setTool("highlighter")} title="Highlighter (H)"><Highlighter size={15} /> Highlighter</button><button className={tool === "eraser" ? "active" : ""} onClick={() => setTool("eraser")} title="Eraser (E)"><Eraser size={15} /> Eraser</button><label className="presentation-color">Color <input type="color" value={tool === "highlighter" ? highlighterColor : pencilColor} disabled={tool === "laser" || tool === "eraser"} onChange={(event) => tool === "highlighter" ? setHighlighterColor(event.target.value) : setPencilColor(event.target.value)} /></label><label className="presentation-thickness">Size <input type="range" min="1" max="16" value={inkSize} onChange={(event) => setInkSize(+event.target.value)} /><b>{inkSize}px</b><small>[ ]</small></label><button onClick={clearAnnotations} title="Clear annotations"><Eraser size={15} /> Clear</button>{showExit && <button onClick={() => window.close()} title="Close presentation"><X size={16} /> Exit</button>}<button className="presentation-collapse" onClick={() => setToolbarCollapsed((collapsed) => !collapsed)} title={toolbarCollapsed ? "Expand toolbar" : "Collapse toolbar"}>{toolbarCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button></div></header>}
+    <section className="presentation-stage" ref={surface} onPointerMove={showToolbar && tool === "laser" ? onPointerMove : undefined} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; }}>
+      <ReactFlow className="presentation-flow" nodes={presentationNodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView onlyRenderVisibleElements={false} nodesConnectable={false} nodesDraggable={false} nodesFocusable={false} elementsSelectable={false} panOnDrag panActivationKeyCode="Space" zoomOnScroll={false} zoomOnPinch zoomOnDoubleClick={false} proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smart" }}>
         <Background gap={20} size={2} color="#d7e2e4" />
-        <MiniMap nodeColor={(node) => (node.data as NodeData).fill} />
       </ReactFlow>
-      <canvas ref={drawing} className={`presentation-ink ${spaceHeld ? "space-held" : tool === "laser" ? "laser-active" : "drawing"}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; if (tool !== "laser") endStroke(); }} />
-      <canvas ref={laserTrail} className="presentation-laser-trail" />
-      <div ref={laser} className="presentation-laser" style={{ width: laserMarkerSize, height: laserMarkerSize }} />
+      {showToolbar && <>
+        <canvas ref={drawing} className={`presentation-ink ${spaceHeld ? "space-held" : tool === "laser" ? "laser-active" : "drawing"}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endStroke} onPointerCancel={endStroke} onPointerLeave={() => { if (laser.current) laser.current.style.opacity = "0"; if (tool !== "laser") endStroke(); }} />
+        <canvas ref={laserTrail} className="presentation-laser-trail" />
+        <div ref={laser} className="presentation-laser" style={{ width: laserMarkerSize, height: laserMarkerSize }} />
+      </>}
     </section>
   </main>;
 }

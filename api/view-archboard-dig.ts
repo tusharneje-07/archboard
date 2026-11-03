@@ -20,6 +20,7 @@ type UploadPayload = {
   diagram: unknown;
   fileName: string;
   name: string;
+  presentation: boolean;
 };
 
 const maxUploadBytes = 5 * 1024 * 1024;
@@ -95,6 +96,17 @@ async function readDemoTokens() {
   return new Set(tokens);
 }
 
+function parsePresentation(value: unknown, present: boolean) {
+  if (!present) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  throw new Error("presentation must be true or false.");
+}
+
 async function parseUpload(req: ApiRequest, raw: Buffer): Promise<UploadPayload> {
   const contentType = header(req, "content-type") ?? "";
   if (contentType.toLowerCase().includes("multipart/form-data")) {
@@ -116,22 +128,26 @@ async function parseUpload(req: ApiRequest, raw: Buffer): Promise<UploadPayload>
       const diagramField = form.get("diagram");
       if (typeof diagramField === "string") diagramText = diagramField;
     }
+    const hasPresentation = form.has("presentation");
     return {
       token: String(form.get("auth_token") ?? ""),
       diagram: diagramText ? JSON.parse(diagramText) as unknown : undefined,
       fileName,
       name: String(form.get("name") ?? ""),
+      presentation: parsePresentation(hasPresentation ? form.get("presentation") : undefined, hasPresentation),
     };
   }
 
   const parsed = JSON.parse(raw.toString("utf8")) as unknown;
   if (!parsed || typeof parsed !== "object") throw new Error("Request body must contain a JSON diagram.");
   const record = parsed as Record<string, unknown>;
+  const hasPresentation = Object.prototype.hasOwnProperty.call(record, "presentation");
   return {
     token: typeof record.auth_token === "string" ? record.auth_token : "",
     diagram: record.diagram ?? (Array.isArray(record.nodes) && Array.isArray(record.edges) ? record : undefined),
     fileName: typeof record.fileName === "string" ? record.fileName : "",
     name: typeof record.name === "string" ? record.name : "",
+    presentation: parsePresentation(hasPresentation ? record.presentation : undefined, hasPresentation),
   };
 }
 
@@ -172,7 +188,12 @@ async function handlePut(req: ApiRequest, res: ApiResponse) {
   const raw = await readBody(req);
   if (raw.length > maxUploadBytes) return sendJson(res, 413, { ok: false, error: "The uploaded file must be 5 MB or smaller." });
 
-  const upload = await parseUpload(req, raw);
+  let upload: UploadPayload;
+  try {
+    upload = await parseUpload(req, raw);
+  } catch (error) {
+    return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : "Invalid request body." });
+  }
   const bearer = (header(req, "authorization") ?? "").match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
   const token = upload.token || queryValue(req, "auth_token") || header(req, "x-auth-token") || bearer;
   if (!token) return sendJson(res, 401, { ok: false, error: "Missing auth_token." });
@@ -193,8 +214,8 @@ async function handlePut(req: ApiRequest, res: ApiResponse) {
   }
 
   const name = displayName(upload.fileName, upload.name);
-  const viewUrl = `/view-archboard-dig#data=${encodeViewPayload({ name, ...diagram })}`;
-  if (wantsJson(req)) return sendJson(res, 200, { ok: true, name, nodes: diagram.nodes.length, edges: diagram.edges.length, viewUrl });
+  const viewUrl = `/view-archboard-dig#data=${encodeViewPayload({ name, presentation: upload.presentation, ...diagram })}`;
+  if (wantsJson(req)) return sendJson(res, 200, { ok: true, name, presentation: upload.presentation, nodes: diagram.nodes.length, edges: diagram.edges.length, viewUrl });
   setCors(res);
   res.statusCode = 303;
   res.setHeader("Location", viewUrl);
