@@ -38,6 +38,7 @@ import {
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
   Box,
+  Check,
   ChevronDown,
   ChevronUp,
   Circle,
@@ -451,7 +452,7 @@ function readExportSettings(): ExportSettings {
 function readProjects(): Project[] {
   try {
     const saved = JSON.parse(localStorage.getItem(projectsKey) || "null");
-    if (Array.isArray(saved) && saved.length) return saved;
+    if (Array.isArray(saved)) return saved;
   } catch { /* Recover by migrating the legacy diagram below. */ }
   const diagram = loadSavedDiagram(), now = Date.now();
   const project: Project = { id: `project-${now}`, name: "Untitled architecture", ...diagram, createdAt: now, updatedAt: now };
@@ -1111,12 +1112,46 @@ function relativeUpdatedLabel(timestamp: number) {
   const years = Math.floor(days / 365);
   return `${years} ${years === 1 ? "year" : "years"} ago`;
 }
+type ProjectDialog = { type: "rename"; project: Project } | { type: "delete"; projects: Project[] };
 function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () => void }) {
-  const [dialog, setDialog] = useState<{ type: "rename" | "delete"; project: Project } | null>(null);
+  const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [draftName, setDraftName] = useState("");
   const [importNotice, setImportNotice] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
+  const selectedProjects = useMemo(() => projects.filter((project) => selectedIds.has(project.id)), [projects, selectedIds]);
+  const allSelected = projects.length > 0 && selectedProjects.length === projects.length;
+  const toggleProjectSelection = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const selectAllProjects = () => setSelectedIds(new Set(projects.map((project) => project.id)));
+  const deleteSelectedProjects = () => {
+    if (selectedProjects.length) setDialog({ type: "delete", projects: selectedProjects });
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (dialog) return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if (event.key === "Escape") {
+        clearSelection();
+        return;
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedProjects.length) {
+        event.preventDefault();
+        setDialog({ type: "delete", projects: selectedProjects });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dialog, selectedProjects]);
   const createProject = () => {
     const now = Date.now(), project: Project = { id: `project-${now}`, name: "Untitled architecture", nodes: [], edges: [], createdAt: now, updatedAt: now };
     writeProjects([project, ...projects]);
@@ -1129,7 +1164,7 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
     writeProjects([copy, ...projects]);
     refresh();
   };
-  const deleteProject = (project: Project) => setDialog({ type: "delete", project });
+  const deleteProject = (project: Project) => setDialog({ type: "delete", projects: [project] });
   const importProjects = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
@@ -1159,16 +1194,47 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
       const name = draftName.trim();
       if (!name) return;
       writeProjects(projects.map((item) => item.id === dialog.project.id ? { ...item, name, updatedAt: Date.now() } : item));
-    } else writeProjects(projects.filter((item) => item.id !== dialog.project.id));
+    } else {
+      const deletedIds = new Set(dialog.projects.map((project) => project.id));
+      writeProjects(projects.filter((item) => !deletedIds.has(item.id)));
+      setSelectedIds((current) => new Set([...current].filter((id) => !deletedIds.has(id))));
+    }
     refresh();
     closeDialog();
   };
   return <main className="project-home">
-     <header className="home-header"><div className="brand-mark"><span className="brand-glyph"><Square size={18} /></span><div><strong>archboard</strong><small>systems, clearly</small></div></div><div className="home-actions"><button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Import</button><button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button><input ref={importInput} hidden type="file" accept=".json,application/json" multiple onChange={(event) => void importProjects(event)} /></div></header>
-     <section className="home-content"><div className="home-intro"><div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p>{importNotice && <p className="import-notice">{importNotice}</p>}</div><span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"}</span></div>
-       <div className="project-grid">{sortedProjects.map((project) => <article className="project-card" key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}><button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button><div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodes.length} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div></article>)}</div>
+    <header className="home-header">
+      <div className="brand-mark"><span className="brand-glyph"><Square size={18} /></span><div><strong>archboard</strong><small>systems, clearly</small></div></div>
+      <div className="home-actions">
+        <button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Import</button>
+        <button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button>
+        <input ref={importInput} hidden type="file" accept=".json,application/json" multiple onChange={(event) => void importProjects(event)} />
+      </div>
+    </header>
+    <section className="home-content">
+      <div className="home-intro">
+        <div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p>{importNotice && <p className="import-notice">{importNotice}</p>}</div>
+        <span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"}</span>
+      </div>
+      {selectedProjects.length > 0 && <div className="project-selection-bar" role="status">
+        <strong>{selectedProjects.length} selected</strong>
+        <button onClick={allSelected ? clearSelection : selectAllProjects}>{allSelected ? "Clear selection" : "Select all"}</button>
+        <button className="danger" onClick={deleteSelectedProjects}><Trash2 size={14} /> Delete</button>
+        <button className="quiet" onClick={clearSelection}>Cancel</button>
+      </div>}
+      {projects.length === 0 && <div className="project-empty"><strong>No projects yet</strong><p>Create a new project or import a JSON diagram.</p></div>}
+      <div className="project-grid">
+        {sortedProjects.map((project) => {
+          const selected = selectedIds.has(project.id);
+          return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}>
+            <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
+            <button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
+            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodes.length} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
+          </article>;
+        })}
+      </div>
     </section>
-    {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialog.type === "rename" ? "Project name" : "Delete project"}</span><h2>{dialog.type === "rename" ? "Rename project" : `Delete “${dialog.project.name}”?`}</h2>{dialog.type === "rename" ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>This project and its local diagram data will be removed.</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialog.type === "delete" ? "danger" : "primary"} onClick={submitDialog}>{dialog.type === "rename" ? "Save name" : "Delete project"}</button></div></div></div>}
+    {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialog.type === "rename" ? "Project name" : "Delete project"}</span><h2>{dialog.type === "rename" ? "Rename project" : dialog.projects.length === 1 ? `Delete “${dialog.projects[0].name}”?` : `Delete ${dialog.projects.length} projects?`}</h2>{dialog.type === "rename" ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>{dialog.projects.length === 1 ? "This project and its local diagram data will be removed." : `These ${dialog.projects.length} projects and their local diagram data will be removed.`}</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialog.type === "delete" ? "danger" : "primary"} onClick={submitDialog}>{dialog.type === "rename" ? "Save name" : dialog.projects.length === 1 ? "Delete project" : `Delete ${dialog.projects.length} projects`}</button></div></div></div>}
   </main>;
 }
 function Editor({ project }: { project: Project }) {
