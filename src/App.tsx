@@ -40,12 +40,15 @@ import {
   Box,
   Check,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Circle,
   Copy,
+  Diamond,
   Download,
   Eraser,
   FileJson,
+  Frame,
   Grid3X3,
   Group,
   Hand,
@@ -63,12 +66,14 @@ import {
   Pipette,
   Plus,
   Presentation as PresentationIcon,
+  RectangleHorizontal,
   Redo2,
   Square,
   Trash2,
   Type,
   Undo2,
   Upload,
+  Waypoints,
   X,
 } from "lucide-react";
 
@@ -797,6 +802,16 @@ const shapeOptions: [ShapeKind, string, typeof Square][] = [
   ["container", "Frame", PanelRight],
   ["line", "Line", Minus],
 ];
+const layerShapeIcons: Record<ShapeKind, typeof Square> = {
+  rectangle: Square,
+  rounded: RectangleHorizontal,
+  ellipse: Circle,
+  diamond: Diamond,
+  text: Type,
+  image: ImageIcon,
+  container: Frame,
+  line: Minus,
+};
 type IconCategory = "Programming Languages" | "Frameworks" | "Databases" | "Cloud Providers" | "Hosting" | "DevOps" | "Developer Tools" | "Networking" | "General Icons";
 type StoreIcon = { id: string; name: string; category: IconCategory; aliases: string[]; source: NonNullable<NodeData["imageAssetSource"]>; url: string };
 const iconCategories: IconCategory[] = ["All" as IconCategory, "Programming Languages", "Frameworks", "Databases", "Cloud Providers", "Hosting", "DevOps", "Developer Tools", "Networking", "General Icons"];
@@ -1331,7 +1346,7 @@ function Editor({ project }: { project: Project }) {
         moveToFrame={moveNodeToFrame}
       />,
     );
-  }, [nodes, selectedId]);
+  }, [nodes, edges, selectedId]);
   const diagramJson = () => JSON.stringify({ nodes, edges }, null, 2);
   const parseDiagramJson = (source: string): { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] } => {
     const value: unknown = JSON.parse(source);
@@ -3067,39 +3082,77 @@ function LayerView({
   moveToFrame: (nodeId: string, frameId?: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [canvasExpanded, setCanvasExpanded] = useState(true);
   const roots = nodes.filter((node) => !node.parentId).slice().reverse();
-  const renderLayer = (node: Node<NodeData>, depth: number): React.ReactNode[] => [
-    <button
-      key={node.id}
-      className={node.id === selectedId ? "active" : ""}
-      style={{ paddingLeft: 9 + depth * 17 }}
-      draggable
-      onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/archboard-layer", node.id); event.dataTransfer.setData("text/plain", node.id); }}
-      onDragOver={(event) => { if (node.data.kind === "container") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
-      onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const nodeId = event.dataTransfer.getData("application/archboard-layer") || event.dataTransfer.getData("text/plain"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
-      onClick={() => select(node.id)}
-    >
-      <span className="layer-caret" onClick={(event) => { event.stopPropagation(); setExpanded((current) => ({ ...current, [node.id]: current[node.id] === false })); }}>{nodes.some((child) => child.parentId === node.id) ? expanded[node.id] === false ? "›" : "⌄" : ""}</span>
-      <span className={`layer-tree-guide ${depth ? "visible" : ""}`} />
-      <span className={`layer-dot ${node.data.kind}`} />
-      <span>{node.data.label.replace(/<[^>]+>/g, "").slice(0, 22) || "Untitled"}</span>
-      <small>{node.data.kind === "container" ? "FRAME" : node.data.kind.toUpperCase()}</small>
-    </button>,
-    ...(expanded[node.id] !== false ? nodes.filter((child) => child.parentId === node.id).slice().reverse().flatMap((child) => renderLayer(child, depth + 1)) : []),
-  ];
+  const cleanLabel = (value?: string) => (value ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  const nodeName = (id: string) => cleanLabel(nodes.find((node) => node.id === id)?.data.label) || id;
+  const renderLayer = (node: Node<NodeData>): React.ReactNode => {
+    const children = nodes.filter((child) => child.parentId === node.id).slice().reverse();
+    const isExpanded = expanded[node.id] !== false;
+    const Icon = layerShapeIcons[node.data.kind];
+    const label = cleanLabel(node.data.label) || (node.data.kind === "line" ? "Line" : "Untitled");
+    return (
+      <div className="layer-node" key={node.id}>
+        <button
+          className={`layer-row${node.id === selectedId ? " active" : ""}`}
+          type="button"
+          title={label}
+          draggable
+          aria-expanded={children.length ? isExpanded : undefined}
+          onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/archboard-layer", node.id); event.dataTransfer.setData("text/plain", node.id); }}
+          onDragOver={(event) => { if (node.data.kind === "container") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+          onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const nodeId = event.dataTransfer.getData("application/archboard-layer") || event.dataTransfer.getData("text/plain"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
+          onClick={() => select(node.id)}
+        >
+          <span className={`layer-caret${children.length ? "" : " empty"}`} onClick={(event) => { if (!children.length) return; event.stopPropagation(); setExpanded((current) => ({ ...current, [node.id]: current[node.id] === false })); }}>
+            {children.length ? isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}
+          </span>
+          <span className={`layer-kind-icon ${node.data.kind}`}><Icon size={13} strokeWidth={2.1} /></span>
+          <span className="layer-name">{label}</span>
+          <small>{node.data.kind === "container" ? "FRAME" : node.data.kind.toUpperCase()}</small>
+        </button>
+        {children.length > 0 && isExpanded && <div className="layer-children">{children.map(renderLayer)}</div>}
+      </div>
+    );
+  };
   return (
     <div className="layers-float">
-      <div className="layers-canvas-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId) moveToFrame(nodeId); }}>Canvas</div>
-      <div className="layers-float-list">
-        {roots.flatMap((node) => renderLayer(node, 0))}
-        {edges.slice().reverse().map((edge) => <button key={edge.id} className={edge.id === selectedId ? "active" : ""} onClick={() => select(edge.id)}>
-          <span className="layer-caret" />
-          <span className="layer-tree-guide visible" />
-          <span className="layer-dot line" />
-          <span>{edge.data?.label?.replace(/<[^>]+>/g, "").split("\n")[0].slice(0, 22) || `${edge.source} -> ${edge.target}`}</span>
-          <small>LINE</small>
-        </button>)}
-      </div>
+      <button
+        className="layer-row layers-canvas-drop"
+        type="button"
+        aria-expanded={canvasExpanded}
+        onClick={() => setCanvasExpanded((value) => !value)}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => { event.preventDefault(); const nodeId = event.dataTransfer.getData("application/archboard-layer"); if (nodeId) moveToFrame(nodeId); }}
+      >
+        <span className={`layer-caret${roots.length ? "" : " empty"}`}>{roots.length ? canvasExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}</span>
+        <span className="layer-kind-icon canvas"><Group size={13} strokeWidth={2.1} /></span>
+        <span className="layer-name">Canvas</span>
+        <small>{roots.length}</small>
+      </button>
+      {canvasExpanded && <div className="layers-float-list">
+        {roots.map(renderLayer)}
+        {edges.length > 0 && <div className="layer-node layer-connector-group">
+          <div className="layer-row layer-section-row">
+            <span className="layer-caret empty" />
+            <span className="layer-kind-icon connector"><Waypoints size={13} strokeWidth={2.1} /></span>
+            <span className="layer-name">Connectors</span>
+            <small>{edges.length}</small>
+          </div>
+          <div className="layer-children">
+            {edges.slice().reverse().map((edge) => {
+              const label = cleanLabel(edge.data?.label) || `${nodeName(edge.source)} → ${nodeName(edge.target)}`;
+              return <button key={edge.id} className={`layer-row layer-edge-row${edge.id === selectedId ? " active" : ""}`} type="button" title={label} onClick={() => select(edge.id)}>
+                <span className="layer-caret empty" />
+                <span className="layer-kind-icon connector"><Waypoints size={13} strokeWidth={2.1} /></span>
+                <span className="layer-name">{label}</span>
+                <small>CONNECTOR</small>
+              </button>;
+            })}
+          </div>
+        </div>}
+        {!roots.length && !edges.length && <div className="layer-empty">No layers yet</div>}
+      </div>}
     </div>
   );
 }
