@@ -1260,6 +1260,7 @@ function Editor({ project }: { project: Project }) {
      [rightWidth, setRightWidth] = useState(250),
      [rightPanelOpen, setRightPanelOpen] = useState(true),
     [exportOpen, setExportOpen] = useState(false),
+    [exportBusy, setExportBusy] = useState(false),
      [exportFormat, setExportFormat] = useState<ExportFormat>(() => readExportSettings().format),
      [exportTransparent, setExportTransparent] = useState(() => readExportSettings().transparent),
      [exportQuality, setExportQuality] = useState(() => readExportSettings().quality),
@@ -1278,7 +1279,8 @@ function Editor({ project }: { project: Project }) {
      [codeEditorReady, setCodeEditorReady] = useState(0);
   const reactFlow = useReactFlow(),
     canvas = useRef<HTMLDivElement>(null),
-    dropRef = useRef(false);
+    dropRef = useRef(false),
+    exportBusyRef = useRef(false);
   useCanvasWheelNavigation(reactFlow, canvas, 0.5, 2);
   const layerRoot = useRef<Root | null>(null);
   const layerHost = useRef<HTMLDivElement | null>(null);
@@ -1841,24 +1843,28 @@ function Editor({ project }: { project: Project }) {
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
    useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 200, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, oldFlex = element.style.flex, oldOverflow = element.style.overflow, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; element.style.flex = "0 0 auto"; element.style.overflow = "visible"; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => requestAnimationFrame(() => { toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px`, flex: "0 0 auto", overflow: "visible" } }).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; element.style.flex = oldFlex; element.style.overflow = oldOverflow; reactFlow.setViewport(viewport); }); })); }, [exportOpen, exportTransparent, nodes, edges]);
-  const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat) => {
+  const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat, overrides: { transparent?: boolean; quality?: number; dpi?: number } = {}) => {
     if (format === "json") { exportJson(); setExportOpen(false); return; }
-    if (!canvas.current) return;
+    if (!canvas.current || exportBusyRef.current) return;
     const originalViewport = reactFlow.getViewport(), originalWidth = canvas.current.style.width, originalHeight = canvas.current.style.height, originalFlex = canvas.current.style.flex, originalOverflow = canvas.current.style.overflow;
     const bounds = getExportBounds();
     if (!bounds) return;
-     const padding = 200, minX = bounds.minX, minY = bounds.minY, exportWidth = Math.max(1, bounds.maxX - bounds.minX + padding * 2), exportHeight = Math.max(1, bounds.maxY - bounds.minY + padding * 2);
-    canvas.current.classList.add("exporting");
-    canvas.current.style.width = `${exportWidth}px`;
-    canvas.current.style.height = `${exportHeight}px`;
-    canvas.current.style.flex = "0 0 auto";
-    canvas.current.style.overflow = "visible";
-    reactFlow.setViewport({ x: padding - minX, y: padding - minY, zoom: 1 });
+    exportBusyRef.current = true;
+    setExportBusy(true);
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    const backgroundColor = exportTransparent ? undefined : "#f8fafc";
+    const padding = 200, minX = bounds.minX, minY = bounds.minY, exportWidth = Math.max(1, bounds.maxX - bounds.minX + padding * 2), exportHeight = Math.max(1, bounds.maxY - bounds.minY + padding * 2);
+    const transparent = overrides.transparent ?? exportTransparent, quality = overrides.quality ?? exportQuality, dpi = overrides.dpi ?? exportDpi;
+    const backgroundColor = transparent ? undefined : "#f8fafc";
     try {
+      canvas.current.classList.add("exporting");
+      canvas.current.style.width = `${exportWidth}px`;
+      canvas.current.style.height = `${exportHeight}px`;
+      canvas.current.style.flex = "0 0 auto";
+      canvas.current.style.overflow = "visible";
+      reactFlow.setViewport({ x: padding - minX, y: padding - minY, zoom: 1 });
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const exportStyle = { width: `${exportWidth}px`, height: `${exportHeight}px`, flex: "0 0 auto", overflow: "visible" };
-      const options = { backgroundColor, quality: exportQuality / 100, pixelRatio: exportDpi / 96, width: exportWidth, height: exportHeight, style: exportStyle };
+      const options = { backgroundColor, quality: quality / 100, pixelRatio: dpi / 96, width: exportWidth, height: exportHeight, style: exportStyle };
       const data = format === "png" ? await toPng(canvas.current, options) : format === "jpg" ? await toJpeg(canvas.current, options) : await toSvg(canvas.current, { backgroundColor, width: exportWidth, height: exportHeight, style: exportStyle });
       const a = document.createElement("a");
       a.href = data;
@@ -1872,6 +1878,8 @@ function Editor({ project }: { project: Project }) {
       canvas.current.style.flex = originalFlex;
       canvas.current.style.overflow = originalOverflow;
       reactFlow.setViewport(originalViewport);
+      setExportBusy(false);
+      exportBusyRef.current = false;
     }
   };
   const downloadSkill = async () => { const response = await fetch("/SKILL.md"); const content = response.ok ? await response.text() : "Use Archboard's nodes and edges JSON format to draft an importable architecture diagram."; const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([content], { type: "text/markdown" })); a.download = "SKILL.md"; a.click(); URL.revokeObjectURL(a.href); };
@@ -1956,6 +1964,10 @@ function Editor({ project }: { project: Project }) {
             <PresentationIcon size={16} />
             Present
           </button>
+          <button className="quick-png-button" disabled={exportBusy} onClick={() => void exportImage("png", { dpi: 300, transparent: true })} title="Download a 300 DPI PNG with a transparent background">
+            <Download size={16} />
+            Quick PNG
+          </button>
           <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
             Export
@@ -1974,9 +1986,6 @@ function Editor({ project }: { project: Project }) {
               <span className="eyebrow">Library</span>
               <h2>Shapes</h2>
             </div>
-            <button className="quiet">
-              <ChevronDown size={16} />
-            </button>
           </div>
           <p className="panel-note">Drag onto the canvas or click to place.</p>
           <div className="shape-list">
@@ -2304,7 +2313,7 @@ function Editor({ project }: { project: Project }) {
               {exportFormat !== "json" && <><Field label="Quality"><input type="range" min="40" max="100" value={exportQuality} onChange={(e) => setExportQuality(+e.target.value)} /><b>{exportQuality}%</b></Field><label className="export-check"><input type="checkbox" checked={exportTransparent} onChange={(e) => setExportTransparent(e.target.checked)} /> Transparent background</label></>}
             </div>
             <p className="helper">Preview shows the diagram artwork before download. JSON exports the complete editable structure; PNG, JPG, and SVG exclude editor controls.</p>
-            <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" onClick={() => exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div>
+            <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" disabled={exportBusy} onClick={() => exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div>
           </section>
         </div>
        )}
@@ -2330,6 +2339,13 @@ function Editor({ project }: { project: Project }) {
             {codeError && <p className="code-error">{codeError}</p>}
             <footer className="code-fullscreen-actions"><button onClick={() => setCodeFullscreen(false)}>Close</button><button className="primary" onClick={() => { applyDiagramJson(codeDraft); setCodeFullscreen(false); }}><FileJson size={14} /> Apply JSON</button></footer>
           </section>
+        </div>}
+        {exportBusy && <div className="export-busy" role="status" aria-live="polite">
+          <div className="export-busy-card">
+            <span className="export-spinner" />
+            <strong>Exporting image</strong>
+            <span>Rendering your diagram...</span>
+          </div>
         </div>}
      </main>
   );
