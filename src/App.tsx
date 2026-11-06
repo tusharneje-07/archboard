@@ -1115,6 +1115,15 @@ function PresentationView({ project, showExit = true, showToolbar = true }: { pr
     </section>
   </main>;
 }
+function formatStorageSize(bytes: number) {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1).replace(/\.0$/, "")} ${units[unit]}`;
+}
 function relativeUpdatedLabel(timestamp: number) {
   const days = Math.floor(Math.max(0, Date.now() - timestamp) / 86_400_000);
   if (days === 0) return "Updated recently";
@@ -1135,6 +1144,7 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
+  const projectsSize = useMemo(() => formatStorageSize(new Blob([JSON.stringify(projects)]).size), [projects]);
   const selectedProjects = useMemo(() => projects.filter((project) => selectedIds.has(project.id)), [projects, selectedIds]);
   const allSelected = projects.length > 0 && selectedProjects.length === projects.length;
   const toggleProjectSelection = (id: string) => {
@@ -1229,7 +1239,7 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
     <section className="home-content">
       <div className="home-intro">
         <div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p>{importNotice && <p className="import-notice">{importNotice}</p>}</div>
-        <span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"}</span>
+        <span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"} <span className="project-storage-size">({projectsSize})</span></span>
       </div>
       {selectedProjects.length > 0 && <div className="project-selection-bar" role="status">
         <strong>{selectedProjects.length} selected</strong>

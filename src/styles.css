@@ -180,7 +180,8 @@ button {
 .home-intro h1 { margin: 7px 0 8px; color: #17313d; font-size: 32px; letter-spacing: -1.3px; }
 .home-intro p { margin: 0; color: #71878e; font-size: 13px; }
 .home-intro .import-notice { max-width: 720px; margin-top: 10px; color: #176b7d; font: 10px/1.5 "DM Mono"; }
-.project-count { color: #81959b; font: 11px "DM Mono"; text-transform: uppercase; letter-spacing: .5px; }
+.project-count { color: #81959b; font: 11px "DM Mono"; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+.project-storage-size { color: #9aabb0; }
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 18px; }
 .project-empty { display: grid; place-items: center; min-height: 220px; padding: 32px; color: #71878e; background: #fff; border: 1px dashed #c9d9dd; border-radius: 5px; text-align: center; }
 .project-empty strong { color: #244552; font-size: 15px; }
