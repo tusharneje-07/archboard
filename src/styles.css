@@ -210,7 +210,7 @@ button {
 .project-card h2 { overflow: hidden; max-width: 175px; margin: 0 0 5px; color: #244552; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .project-card p { margin: 0; color: #8b9ba0; font: 10px "DM Mono"; }
 .project-actions { display: flex; align-items: center; gap: 2px; }
-.project-actions button { display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; color: #688089; border: 1px solid transparent; border-radius: 3px; font-size: 10px; }
+.project-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 28px; padding: 0 6px; color: #688089; border: 1px solid transparent; border-radius: 3px; font-size: 10px; }
 .project-actions button:hover { color: #176b7d; background: #edf7f8; border-color: #b9dce1; }
 .project-actions button:last-child:hover { color: #b34d4d; background: #fff2f2; border-color: #edc5c5; }
 .project-dialog-backdrop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; background: rgb(18 39 46 / 36%); }

@@ -50,6 +50,7 @@ import {
   Download,
   Eraser,
   FileJson,
+  FolderOpen,
   Frame,
   Grid3X3,
   Group,
@@ -63,6 +64,7 @@ import {
   Minus,
   MousePointer2,
   PanelRight,
+  Pencil,
   PenLine,
   Pentagon,
   Pipette,
@@ -1449,7 +1451,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
           return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}>
             <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
             <button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
-            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
+            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label="Open project" onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label="Rename project" onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
           </article>;
         })}
       </div>
