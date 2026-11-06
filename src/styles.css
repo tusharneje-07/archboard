@@ -215,14 +215,16 @@ button {
 .project-actions button:last-child:hover { color: #b34d4d; background: #fff2f2; border-color: #edc5c5; }
 .project-dialog-backdrop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; background: rgb(18 39 46 / 36%); }
 .project-dialog { width: min(390px, 100%); padding: 24px; background: #fff; border: 1px solid #d7e3e5; border-radius: 6px; box-shadow: 0 20px 60px rgb(15 48 58 / 22%); }
-.project-dialog h2 { margin: 7px 0 8px; color: #1d3f4c; font-size: 20px; letter-spacing: -.5px; }
+.project-dialog h2 { margin: 7px 0 8px; color: #1d3f4c; font-size: 20px; letter-spacing: -.5px; overflow-wrap: anywhere; }
 .project-dialog p { margin: 0 0 18px; color: #71878e; font-size: 12px; line-height: 1.5; }
 .project-dialog input { width: 100%; margin: 6px 0 20px; padding: 10px 11px; color: #314e58; background: #fbfdfd; border: 1px solid #a8cdd2; border-radius: 3px; outline: none; font-size: 13px; }
 .project-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .project-dialog-actions button { padding: 9px 13px; color: #64777f; border: 1px solid #d2e0e2; border-radius: 3px; font-size: 11px; }
 .project-dialog-actions button:hover { background: #f5f9f9; }
 .project-dialog-actions .primary { color: #fff; background: #00546d; border-color: #00546d; }
+.project-dialog-actions .primary:hover { color: #fff; background: #00475c; border-color: #00475c; }
 .project-dialog-actions .danger { color: #fff; background: #b34d4d; border-color: #b34d4d; }
+.project-dialog-actions .danger:hover { color: #fff; background: #9f3f3f; border-color: #9f3f3f; }
 .code-panel { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; height: auto; }
 .code-panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
 .code-panel-actions { display: flex; align-items: center; gap: 6px; }
