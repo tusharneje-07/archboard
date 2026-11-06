@@ -4,6 +4,8 @@ import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import { create } from "zustand";
 import DOMPurify from "dompurify";
 import { toJpeg, toPng, toSvg } from "html-to-image";
+import { deflateCompress, deflateDecompress, type CompressedProject } from "./compression";
+import { huffmanDecompress, type HuffmanCompressed } from "./huffman";
 import {
   addEdge,
   Background,
@@ -454,18 +456,197 @@ function readExportSettings(): ExportSettings {
     return defaultExportSettings;
   }
 }
-function readProjects(): Project[] {
+const activeProjectKey = "archboard-active-project";
+const legacyDiagramKey = "archboard-diagram";
+type ProjectSummary = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  presentation?: boolean;
+  nodeCount: number;
+  compression: CompressedProject;
+};
+type LegacyProjectSummary = Omit<ProjectSummary, "compression"> & { huffman: HuffmanCompressed };
+type ActiveProjectRecord = { project: Project; savedAt: number };
+function hasSummaryMetadata(value: Partial<ProjectSummary>): boolean {
+  return typeof value.id === "string" && typeof value.name === "string" && typeof value.createdAt === "number" && typeof value.updatedAt === "number" && typeof value.nodeCount === "number";
+}
+function isProjectSummary(value: unknown): value is ProjectSummary {
+  if (!value || typeof value !== "object") return false;
+  const project = value as Partial<ProjectSummary>, compression = project.compression;
+  return hasSummaryMetadata(project) && !!compression && compression.codec === "deflate" && typeof compression.data === "string" && typeof compression.originalSize === "number";
+}
+function isLegacyProjectSummary(value: unknown): value is LegacyProjectSummary {
+  if (!value || typeof value !== "object") return false;
+  const project = value as Partial<LegacyProjectSummary>, huffman = project.huffman;
+  return hasSummaryMetadata(project) && !!huffman && typeof huffman.tree === "string" && typeof huffman.data === "string" && typeof huffman.bitLength === "number" && typeof huffman.originalSize === "number";
+}
+function isLegacyProject(value: unknown): value is Project {
+  if (!value || typeof value !== "object") return false;
+  const project = value as Partial<Project>;
+  return typeof project.id === "string" && typeof project.name === "string" && typeof project.createdAt === "number" && typeof project.updatedAt === "number" && Array.isArray(project.nodes) && Array.isArray(project.edges);
+}
+function compressProject(project: Project): ProjectSummary {
+  return {
+    id: project.id,
+    name: project.name,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    presentation: project.presentation,
+    nodeCount: project.nodes.length,
+    compression: deflateCompress(JSON.stringify({ nodes: project.nodes, edges: project.edges })),
+  };
+}
+function migrateLegacySummary(summary: LegacyProjectSummary): ProjectSummary | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(projectsKey) || "null");
-    if (Array.isArray(saved)) return saved;
-  } catch { /* Recover by migrating the legacy diagram below. */ }
+    return {
+      id: summary.id,
+      name: summary.name,
+      createdAt: summary.createdAt,
+      updatedAt: summary.updatedAt,
+      presentation: summary.presentation,
+      nodeCount: summary.nodeCount,
+      compression: deflateCompress(huffmanDecompress(summary.huffman)),
+    };
+  } catch {
+    return null;
+  }
+}
+function writeProjectSummaries(projects: ProjectSummary[]) {
+  localStorage.setItem(projectsKey, JSON.stringify(projects));
+}
+function readProjectSummaries(createDefault = true): ProjectSummary[] {
+  let saved: unknown = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(projectsKey) || "null");
+  } catch { /* Recover from the legacy project data below. */ }
+  if (Array.isArray(saved)) {
+    const summaries: ProjectSummary[] = [];
+    let changed = false;
+    for (const item of saved) {
+      if (isProjectSummary(item)) summaries.push(item);
+      else if (isLegacyProjectSummary(item)) {
+        const migrated = migrateLegacySummary(item);
+        if (migrated) summaries.push(migrated);
+        changed = true;
+      } else if (isLegacyProject(item)) {
+        summaries.push(compressProject(item));
+        changed = true;
+      } else changed = true;
+    }
+    if (changed) writeProjectSummaries(summaries);
+    localStorage.removeItem(legacyDiagramKey);
+    return summaries;
+  }
+  if (!createDefault && !localStorage.getItem(legacyDiagramKey)) return [];
   const diagram = loadSavedDiagram(), now = Date.now();
   const project: Project = { id: `project-${now}`, name: "Untitled architecture", ...diagram, createdAt: now, updatedAt: now };
-  localStorage.setItem(projectsKey, JSON.stringify([project]));
-  return [project];
+  const summaries = [compressProject(project)];
+  writeProjectSummaries(summaries);
+  localStorage.removeItem(legacyDiagramKey);
+  return summaries;
 }
-function writeProjects(projects: Project[]) {
-  localStorage.setItem(projectsKey, JSON.stringify(projects));
+function readActiveProject(): ActiveProjectRecord | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(activeProjectKey) || "null") as ActiveProjectRecord | null;
+    if (saved?.project && typeof saved.project.id === "string" && Array.isArray(saved.project.nodes) && Array.isArray(saved.project.edges)) return saved;
+  } catch { /* Treat invalid active data as absent. */ }
+  return null;
+}
+function writeActiveProject(project: Project) {
+  localStorage.setItem(activeProjectKey, JSON.stringify({ project, savedAt: Date.now() } satisfies ActiveProjectRecord));
+}
+function clearActiveProject() {
+  localStorage.removeItem(activeProjectKey);
+}
+function decompressProject(summary: ProjectSummary): Project | null {
+  try {
+    const diagram = JSON.parse(deflateDecompress(summary.compression)) as { nodes?: unknown[]; edges?: unknown[] };
+    if (!Array.isArray(diagram.nodes) || !Array.isArray(diagram.edges)) return null;
+    return {
+      id: summary.id,
+      name: summary.name,
+      createdAt: summary.createdAt,
+      updatedAt: summary.updatedAt,
+      presentation: summary.presentation,
+      nodes: normalizeLoadedNodes(normalizeDiagramNodes(diagram.nodes)),
+      edges: normalizeDiagramEdges(diagram.edges),
+    };
+  } catch {
+    return null;
+  }
+}
+function readProject(id: string): Project | null {
+  const active = readActiveProject();
+  if (active?.project.id === id) return active.project;
+  const summary = readProjectSummaries().find((project) => project.id === id);
+  return summary ? decompressProject(summary) : null;
+}
+function openProject(id: string): Project | null {
+  const active = readActiveProject();
+  if (active && active.project.id !== id) closeActiveProject();
+  const project = readProject(id);
+  if (project) writeActiveProject(project);
+  return project;
+}
+function closeActiveProject() {
+  const active = readActiveProject();
+  if (!active) return;
+  const summaries = readProjectSummaries(false);
+  const summary = compressProject(active.project);
+  const index = summaries.findIndex((project) => project.id === active.project.id);
+  if (index >= 0) summaries[index] = summary;
+  else summaries.unshift(summary);
+  writeProjectSummaries(summaries);
+  clearActiveProject();
+}
+function saveActiveDiagram(id: string, nodes: Node<NodeData>[], edges: Edge<EdgeData>[]) {
+  const active = readActiveProject();
+  if (!active || active.project.id !== id) return;
+  writeActiveProject({ ...active.project, nodes, edges, updatedAt: Date.now() });
+}
+function storeProjectRecords(projects: Project[]) {
+  if (!projects.length) return;
+  writeProjectSummaries([...projects.map(compressProject), ...readProjectSummaries(false)]);
+}
+function createProjectRecord() {
+  const now = Date.now();
+  const project: Project = { id: `project-${now}`, name: "Untitled architecture", nodes: [], edges: [], createdAt: now, updatedAt: now };
+  storeProjectRecords([project]);
+  return project.id;
+}
+function duplicateProjectRecord(id: string) {
+  const source = readProject(id);
+  if (!source) return;
+  const now = Date.now();
+  const copy: Project = {
+    ...source,
+    id: `project-${now}`,
+    name: `${source.name} copy`,
+    createdAt: now,
+    updatedAt: now,
+    nodes: source.nodes.map((node) => ({ ...node, id: `${node.id}-${now}`, selected: false })),
+    edges: source.edges.map((edge) => ({ ...edge, id: `${edge.id}-${now}`, source: `${edge.source}-${now}`, target: `${edge.target}-${now}`, selected: false })),
+  };
+  storeProjectRecords([copy]);
+}
+function renameProjectRecord(id: string, name: string) {
+  const now = Date.now();
+  const active = readActiveProject();
+  if (active?.project.id === id) writeActiveProject({ ...active.project, name, updatedAt: now });
+  const summaries = readProjectSummaries(false);
+  const index = summaries.findIndex((project) => project.id === id);
+  if (index >= 0) {
+    summaries[index] = { ...summaries[index], name, updatedAt: now };
+    writeProjectSummaries(summaries);
+  }
+}
+function deleteProjectRecords(ids: string[]) {
+  const deleted = new Set(ids);
+  writeProjectSummaries(readProjectSummaries(false).filter((project) => !deleted.has(project.id)));
+  const active = readActiveProject();
+  if (active && deleted.has(active.project.id)) clearActiveProject();
 }
 function navigate(path: string) {
   window.history.pushState({}, "", path);
@@ -867,9 +1048,10 @@ function inferIconCategory(identifier: string): IconCategory {
 function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [hash, setHash] = useState(window.location.hash);
-  const [projects, setProjects] = useState(readProjects);
+  const [projects, setProjects] = useState<ProjectSummary[]>(readProjectSummaries);
+  const [loadedProject, setLoadedProject] = useState<Project | null>(null);
   useEffect(() => {
-    const onPopState = () => { setPath(window.location.pathname); setHash(window.location.hash); setProjects(readProjects()); };
+    const onPopState = () => { setPath(window.location.pathname); setHash(window.location.hash); setProjects(readProjectSummaries()); };
     const onHashChange = () => setHash(window.location.hash);
     window.addEventListener("popstate", onPopState);
     window.addEventListener("hashchange", onHashChange);
@@ -877,21 +1059,36 @@ function App() {
   }, []);
   const projectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1];
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
+  const isHome = !projectId && !presentationId && !/^\/view-archboard-dig\/?$/.test(path);
+  useEffect(() => {
+    if (isHome) {
+      closeActiveProject();
+      setLoadedProject(null);
+      setProjects(readProjectSummaries());
+      return;
+    }
+    if (!projectId) {
+      setLoadedProject(null);
+      return;
+    }
+    const project = openProject(projectId);
+    if (!project) {
+      navigate("/");
+      return;
+    }
+    setLoadedProject(project);
+  }, [isHome, projectId]);
   if (/^\/view-archboard-dig\/?$/.test(path)) {
     const project = readViewProject(hash);
     return project ? <ReactFlowProvider><PresentationView project={project} showExit={false} showToolbar={project.presentation === true} /></ReactFlowProvider> : <div className="presentation-missing">No uploaded diagram found. Send a PUT request to <code>/view-archboard-dig</code> with a JSON file and auth_token.</div>;
   }
   if (presentationId) {
-    const project = projects.find((item) => item.id === presentationId);
+    const project = readProject(presentationId);
     return project ? <ReactFlowProvider><PresentationView project={project} /></ReactFlowProvider> : <div className="presentation-missing">Project not found.</div>;
   }
-  if (!projectId) return <HomeScreen projects={projects} refresh={() => setProjects(readProjects())} />;
-  const project = projects.find((item) => item.id === projectId);
-  if (!project) {
-    navigate("/");
-    return null;
-  }
-  return <ReactFlowProvider><Editor key={project.id} project={project} /></ReactFlowProvider>;
+  if (isHome) return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} />;
+  if (!loadedProject || loadedProject.id !== projectId) return null;
+  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} /></ReactFlowProvider>;
 }
 type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
 function PresentationView({ project, showExit = true, showToolbar = true }: { project: Project; showExit?: boolean; showToolbar?: boolean }) {
@@ -1136,8 +1333,8 @@ function relativeUpdatedLabel(timestamp: number) {
   const years = Math.floor(days / 365);
   return `${years} ${years === 1 ? "year" : "years"} ago`;
 }
-type ProjectDialog = { type: "rename"; project: Project } | { type: "delete"; projects: Project[] };
-function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () => void }) {
+type ProjectDialog = { type: "rename"; project: ProjectSummary } | { type: "delete"; projects: ProjectSummary[] };
+function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh: () => void }) {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [draftName, setDraftName] = useState("");
   const [importNotice, setImportNotice] = useState("");
@@ -1178,18 +1375,16 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [dialog, selectedProjects]);
   const createProject = () => {
-    const now = Date.now(), project: Project = { id: `project-${now}`, name: "Untitled architecture", nodes: [], edges: [], createdAt: now, updatedAt: now };
-    writeProjects([project, ...projects]);
+    const id = createProjectRecord();
     refresh();
-    navigate(`/project/${project.id}`);
+    navigate(`/project/${id}`);
   };
-  const renameProject = (project: Project) => { setDraftName(project.name); setDialog({ type: "rename", project }); };
-  const duplicateProject = (project: Project) => {
-    const now = Date.now(), copy: Project = { ...project, id: `project-${now}`, name: `${project.name} copy`, createdAt: now, updatedAt: now, nodes: project.nodes.map((node) => ({ ...node, id: `${node.id}-${now}` })), edges: project.edges.map((edge) => ({ ...edge, id: `${edge.id}-${now}`, source: `${edge.source}-${now}`, target: `${edge.target}-${now}` })) };
-    writeProjects([copy, ...projects]);
+  const renameProject = (project: ProjectSummary) => { setDraftName(project.name); setDialog({ type: "rename", project }); };
+  const duplicateProject = (project: ProjectSummary) => {
+    duplicateProjectRecord(project.id);
     refresh();
   };
-  const deleteProject = (project: Project) => setDialog({ type: "delete", projects: [project] });
+  const deleteProject = (project: ProjectSummary) => setDialog({ type: "delete", projects: [project] });
   const importProjects = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
@@ -1206,7 +1401,7 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
       }
     }
     if (imported.length) {
-      writeProjects([...imported, ...projects]);
+      storeProjectRecords(imported);
       refresh();
     }
     setImportNotice(`${imported.length} imported${failures.length ? `, ${failures.length} failed` : ""}${failures.length ? ` (${failures.join("; ")})` : "."}`);
@@ -1218,10 +1413,10 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
     if (dialog.type === "rename") {
       const name = draftName.trim();
       if (!name) return;
-      writeProjects(projects.map((item) => item.id === dialog.project.id ? { ...item, name, updatedAt: Date.now() } : item));
+      renameProjectRecord(dialog.project.id, name);
     } else {
       const deletedIds = new Set(dialog.projects.map((project) => project.id));
-      writeProjects(projects.filter((item) => !deletedIds.has(item.id)));
+      deleteProjectRecords([...deletedIds]);
       setSelectedIds((current) => new Set([...current].filter((id) => !deletedIds.has(id))));
     }
     refresh();
@@ -1254,7 +1449,7 @@ function HomeScreen({ projects, refresh }: { projects: Project[]; refresh: () =>
           return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}>
             <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
             <button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
-            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodes.length} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
+            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" onClick={() => navigate(`/project/${project.id}`)}>Open</button><button title="Rename project" onClick={() => renameProject(project)}>Rename</button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
           </article>;
         })}
       </div>
@@ -1320,10 +1515,14 @@ function Editor({ project }: { project: Project }) {
   const saveProjectName = () => {
     const name = nameDraft.trim();
     if (name) {
-      writeProjects(readProjects().map((item) => item.id === project.id ? { ...item, name, updatedAt: Date.now() } : item));
+      renameProjectRecord(project.id, name);
       setNameDraft(name);
     } else setNameDraft(project.name);
     setEditingName(false);
+  };
+  const goHome = () => {
+    closeActiveProject();
+    navigate("/");
   };
   const selectLayer = (id: string) => {
     setSelectedId(id);
@@ -1478,9 +1677,7 @@ function Editor({ project }: { project: Project }) {
   }, [nodes, reactFlow, setNodes, snapshot]);
   useEffect(() => {
     setDiagram(nodes, edges);
-    const projects = readProjects();
-    writeProjects(projects.map((item) => item.id === project.id ? { ...item, nodes, edges, updatedAt: Date.now() } : item));
-    localStorage.setItem("archboard-diagram", JSON.stringify({ nodes, edges }));
+    saveActiveDiagram(project.id, nodes, edges);
   }, [nodes, edges, project.id, setDiagram]);
   const deleteSelected = () => {
     const selectedNodes = nodes
@@ -1975,7 +2172,7 @@ function Editor({ project }: { project: Project }) {
           <span className="saved">Saved locally</span>
         </div>
         <div className="top-actions">
-          <button className="icon-button" onClick={() => navigate("/")} title="Home">
+          <button className="icon-button" onClick={goHome} title="Home">
             <Home size={17} />
           </button>
           <button className="icon-button" onClick={openImportDialog} title="Import JSON">

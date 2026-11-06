@@ -16,6 +16,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.8.6",
     "dompurify": "^3.2.6",
+    "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
