@@ -762,6 +762,17 @@ h2 {
   border-color: #1d869b;
   font-weight: 700;
 }
+.inspector-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding-bottom: 10px;
+}
+.inspector-scroll::-webkit-scrollbar { display: none; }
+.inspector-scroll .inspector-content,
+.inspector-scroll .theme-grid { overflow: visible; padding-bottom: 0; }
 .inspector-content {
   display: grid;
   gap: 14px;

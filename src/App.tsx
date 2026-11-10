@@ -460,6 +460,46 @@ function readExportSettings(): ExportSettings {
 }
 const activeProjectKey = "archboard-active-project";
 const legacyDiagramKey = "archboard-diagram";
+const inspectorTabKey = "archboard-inspector-tab";
+const inspectorScrollKey = "archboard-inspector-scroll";
+type InspectorTab = "text" | "appearance" | "themes" | "connector";
+const inspectorTabValues: InspectorTab[] = ["text", "appearance", "themes", "connector"];
+function isInspectorTab(value: unknown): value is InspectorTab {
+  return value === "text" || value === "appearance" || value === "themes" || value === "connector";
+}
+function readInspectorTab(): InspectorTab {
+  try {
+    const saved = localStorage.getItem(inspectorTabKey);
+    return isInspectorTab(saved) ? saved : "text";
+  } catch {
+    return "text";
+  }
+}
+function writeInspectorTab(tab: InspectorTab) {
+  try {
+    localStorage.setItem(inspectorTabKey, tab);
+  } catch { /* Ignore unavailable storage. */ }
+}
+type InspectorScrollPositions = Partial<Record<InspectorTab, number>>;
+function readInspectorScrollPositions(): InspectorScrollPositions {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(inspectorScrollKey) || "null");
+    if (!saved || typeof saved !== "object") return {};
+    const positions: InspectorScrollPositions = {};
+    for (const tab of inspectorTabValues) {
+      const value = Number((saved as Record<string, unknown>)[tab]);
+      if (Number.isFinite(value) && value >= 0) positions[tab] = value;
+    }
+    return positions;
+  } catch {
+    return {};
+  }
+}
+function writeInspectorScrollPositions(positions: InspectorScrollPositions) {
+  try {
+    localStorage.setItem(inspectorScrollKey, JSON.stringify(positions));
+  } catch { /* Ignore unavailable storage. */ }
+}
 type ProjectSummary = {
   id: string;
   name: string;
@@ -1472,9 +1512,7 @@ function Editor({ project }: { project: Project }) {
   const [selectedId, setSelectedId] = useState(project.nodes[0]?.id ?? ""),
     [editingName, setEditingName] = useState(false),
     [nameDraft, setNameDraft] = useState(project.name),
-    [tab, setTab] = useState<"text" | "appearance" | "themes" | "connector">(
-      "appearance",
-    ),
+    [tab, setTab] = useState<InspectorTab>(readInspectorTab),
     [grid, setGrid] = useState(true),
     [snap, setSnap] = useState(true),
     [leftTab, setLeftTab] = useState<"shapes" | "layers" | "code">("shapes"),
@@ -1509,6 +1547,35 @@ function Editor({ project }: { project: Project }) {
   const codeEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const codeDecorationRef = useRef<string[]>([]);
   const selectionStart = useRef<{ x: number; y: number } | null>(null);
+  const inspectorScrollRef = useRef<HTMLDivElement | null>(null);
+  const [initialInspectorScroll] = useState(readInspectorScrollPositions);
+  const inspectorScrollPositions = useRef<InspectorScrollPositions>(initialInspectorScroll);
+  const inspectorScrollSaveTimer = useRef<number | null>(null);
+  const saveInspectorScroll = (tabToSave: InspectorTab, top: number) => {
+    inspectorScrollPositions.current[tabToSave] = Math.max(0, top);
+    if (inspectorScrollSaveTimer.current !== null) window.clearTimeout(inspectorScrollSaveTimer.current);
+    inspectorScrollSaveTimer.current = window.setTimeout(() => {
+      writeInspectorScrollPositions(inspectorScrollPositions.current);
+      inspectorScrollSaveTimer.current = null;
+    }, 120);
+  };
+  useEffect(() => {
+    writeInspectorTab(tab);
+  }, [tab]);
+  useEffect(() => {
+    const flush = () => {
+      if (inspectorScrollSaveTimer.current !== null) {
+        window.clearTimeout(inspectorScrollSaveTimer.current);
+        inspectorScrollSaveTimer.current = null;
+      }
+      writeInspectorScrollPositions(inspectorScrollPositions.current);
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      flush();
+    };
+  }, []);
    useEffect(() => {
      localStorage.setItem(exportSettingsKey, JSON.stringify({ format: exportFormat, transparent: exportTransparent, quality: exportQuality, dpi: exportDpi } satisfies ExportSettings));
    }, [exportFormat, exportTransparent, exportQuality, exportDpi]);
@@ -1530,8 +1597,6 @@ function Editor({ project }: { project: Project }) {
     setSelectedId(id);
     setNodes((items) => items.map((item) => ({ ...item, selected: item.id === id })));
     setEdges((items) => items.map((item) => ({ ...item, selected: item.id === id })));
-    if (edges.some((edge) => edge.id === id)) setTab("connector");
-    else setTab("appearance");
   };
   useEffect(() => {
     const host = document.createElement("div");
@@ -1724,6 +1789,16 @@ function Editor({ project }: { project: Project }) {
   }, [selectedId, nodes, edges, redoDiagram, undoDiagram, snapshot]);
   const selected = nodes.find((n) => n.id === selectedId),
     selectedEdge = edges.find((e) => e.id === selectedId);
+  const availableTabs: InspectorTab[] = selectedEdge
+    ? ["connector"]
+    : selected?.data.kind === "line"
+      ? ["connector", "appearance", "themes"]
+      : ["text", "appearance", "themes"];
+  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0];
+  useEffect(() => {
+    const node = inspectorScrollRef.current;
+    if (node) node.scrollTop = inspectorScrollPositions.current[activeTab] ?? 0;
+  }, [activeTab, selectedId]);
   const absolutePosition = (node: Node<NodeData>, allNodes = nodes): { x: number; y: number } => {
     const parent = node.parentId ? allNodes.find((item) => item.id === node.parentId) : undefined;
     if (!parent) return node.position;
@@ -2311,13 +2386,11 @@ function Editor({ project }: { project: Project }) {
                   setSelectedId(n.id);
                   setNodes((items) => items.map((item) => ({ ...item, selected: item.id === n.id })));
                   setEdges((items) => items.map((item) => ({ ...item, selected: false })));
-                  setTab("appearance");
                 }}
                 onEdgeClick={(_, e) => {
                   setSelectedId(e.id);
                   setEdges((items) => items.map((item) => ({ ...item, selected: item.id === e.id })));
                   setNodes((items) => items.map((item) => ({ ...item, selected: false })));
-                  setTab("connector");
                 }}
                 onSelectionChange={({ nodes: selectedNodes }) => {
                   const selectedNodeIds = new Set(selectedNodes.map((node) => node.id));
@@ -2344,7 +2417,6 @@ function Editor({ project }: { project: Project }) {
                   if (selectedEdgeIds.size) {
                     setEdges((items) => items.map((edge) => ({ ...edge, selected: selectedEdgeIds.has(edge.id) })));
                     setSelectedId([...selectedEdgeIds][0]);
-                    setTab("connector");
                   }
                 }}
                 onPaneClick={() => {
@@ -2378,7 +2450,7 @@ function Editor({ project }: { project: Project }) {
             {!rightPanelOpen && <button className="panel-reopen" type="button" title="Show inspector" aria-label="Show inspector" onClick={() => setRightPanelOpen(true)}><PanelRight size={17} /></button>}
             {contextMenu && <div className="shape-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
               <button onClick={() => showNodeInCode(contextMenu.nodeId)}><FileJson size={14} /> Show in Code Pane</button>
-              {contextMenu.nodeIds.length === 1 && <button onClick={() => { selectSingleNode(contextMenu.nodeId); setTab("appearance"); setContextMenu(null); }}><PanelRight size={14} /> Edit Properties</button>}
+              {contextMenu.nodeIds.length === 1 && <button onClick={() => { selectSingleNode(contextMenu.nodeId); setContextMenu(null); }}><PanelRight size={14} /> Edit Properties</button>}
               <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "front")}><ChevronUp size={14} /> Bring to Front</button>
               <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "back")}><ChevronDown size={14} /> Bring to Back</button>
               <button onClick={() => changeLayerOrder(contextMenu.nodeIds, "forward")}><ChevronUp size={14} /> Move Front</button>
@@ -2412,91 +2484,92 @@ function Editor({ project }: { project: Project }) {
           {selected || selectedEdge ? (
             <>
               <div className="inspector-tabs">
-                 {(selectedEdge
-                   ? ["connector"]
-                   : selected?.data.kind === "line"
-                     ? ["connector", "appearance", "themes"]
-                     : ["text", "appearance", "themes"]
-                 ).map((t) => (
+                {availableTabs.map((t) => (
                   <button
-                    className={tab === t ? "active" : ""}
+                    className={activeTab === t ? "active" : ""}
                     key={t}
-                    onClick={() => setTab(t as typeof tab)}
+                    onClick={() => setTab(t)}
                   >
-                     {selected?.data.kind === "line" && t === "connector" ? "Text" : t}
+                    {selected?.data.kind === "line" && t === "connector" ? "Text" : t}
                   </button>
                 ))}
               </div>
-              {selected && !selectedEdge && tab === "text" && (
-                <TextPanel data={selected.data} update={updateSelected} />
-              )}{" "}
-              {selected && !selectedEdge && tab === "appearance" && (
-                <AppearancePanel data={selected.data} update={updateSelected} arrange={arrangeSelectedFrame} />
-              )}{" "}
-              {selected && !selectedEdge && tab === "themes" && (
-                <ThemePanel
-                  apply={(t) =>
-                    updateSelected({
-                      fill: t.fill,
-                      border: t.border,
-                      textColor: t.text,
-                    })
-                  }
-                />
-              )}{" "}
-               {selected?.data.kind === "line" && !selectedEdge && tab === "connector" && (
-                 <ConnectorPanel
-                   data={{
-                     route: selected.data.lineRoute ?? "straight",
-                     arrow: selected.data.lineArrow ?? "single",
-                     stroke: selected.data.lineStroke ?? "#27576B",
-                     width: selected.data.lineWidth ?? 1.5,
-                     dashed: selected.data.lineDashed ?? false,
-                     dash: selected.data.lineDash ?? 6,
-                     gap: selected.data.lineGap ?? 5,
-                     label: selected.data.label,
-                     labelDirection: selected.data.lineLabelDirection,
-                     labelHtml: selected.data.lineLabelHtml,
-                     labelColor: selected.data.textColor,
-                     labelFill: selected.data.fill,
-                     labelBorder: selected.data.border,
-                     labelBorderWidth: selected.data.borderWidth,
-                     labelRadius: selected.data.radius,
-                     labelPadding: selected.data.padding,
-                     labelFontFamily: selected.data.fontFamily,
-                     labelFontSize: selected.data.fontSize,
-                     labelFontWeight: selected.data.fontWeight,
-                     labelAlign: selected.data.align,
-                   }}
-                   update={(patch) => updateSelected({
-                     ...(patch.route ? { lineRoute: patch.route } : {}),
-                     ...(patch.arrow ? { lineArrow: patch.arrow } : {}),
-                     ...(patch.stroke ? { lineStroke: patch.stroke } : {}),
-                     ...(patch.width !== undefined ? { lineWidth: patch.width } : {}),
-                     ...(patch.dashed !== undefined ? { lineDashed: patch.dashed } : {}),
-                     ...(patch.dash !== undefined ? { lineDash: patch.dash } : {}),
-                     ...(patch.gap !== undefined ? { lineGap: patch.gap } : {}),
-                     ...(patch.label !== undefined ? { label: patch.label } : {}),
-                     ...(patch.labelDirection ? { lineLabelDirection: patch.labelDirection } : {}),
-                     ...(patch.labelHtml !== undefined ? { lineLabelHtml: patch.labelHtml } : {}),
-                     ...(patch.labelColor ? { textColor: patch.labelColor } : {}),
-                     ...(patch.labelFill ? { fill: patch.labelFill } : {}),
-                     ...(patch.labelBorder ? { border: patch.labelBorder } : {}),
-                     ...(patch.labelBorderWidth !== undefined ? { borderWidth: patch.labelBorderWidth } : {}),
-                     ...(patch.labelRadius !== undefined ? { radius: patch.labelRadius } : {}),
-                     ...(patch.labelPadding !== undefined ? { padding: patch.labelPadding } : {}),
-                     ...(patch.labelFontFamily ? { fontFamily: patch.labelFontFamily } : {}),
-                     ...(patch.labelFontSize !== undefined ? { fontSize: patch.labelFontSize } : {}),
-                     ...(patch.labelFontWeight !== undefined ? { fontWeight: patch.labelFontWeight } : {}),
-                     ...(patch.labelAlign ? { align: patch.labelAlign } : {}),
-                   })}
-                   includeLabelColors={false}
-                   includeRouting={false}
-                 />
-               )}
-               {selectedEdge && tab === "connector" && (
-                <ConnectorPanel data={selectedEdge.data!} update={updateEdge} />
-              )}
+              <div
+                className="inspector-scroll"
+                ref={inspectorScrollRef}
+                onScroll={(event) => saveInspectorScroll(activeTab, event.currentTarget.scrollTop)}
+              >
+                {selected && !selectedEdge && activeTab === "text" && (
+                  <TextPanel data={selected.data} update={updateSelected} />
+                )}
+                {selected && !selectedEdge && activeTab === "appearance" && (
+                  <AppearancePanel data={selected.data} update={updateSelected} arrange={arrangeSelectedFrame} />
+                )}
+                {selected && !selectedEdge && activeTab === "themes" && (
+                  <ThemePanel
+                    apply={(t) =>
+                      updateSelected({
+                        fill: t.fill,
+                        border: t.border,
+                        textColor: t.text,
+                      })
+                    }
+                  />
+                )}
+                {selected?.data.kind === "line" && !selectedEdge && activeTab === "connector" && (
+                  <ConnectorPanel
+                    data={{
+                      route: selected.data.lineRoute ?? "straight",
+                      arrow: selected.data.lineArrow ?? "single",
+                      stroke: selected.data.lineStroke ?? "#27576B",
+                      width: selected.data.lineWidth ?? 1.5,
+                      dashed: selected.data.lineDashed ?? false,
+                      dash: selected.data.lineDash ?? 6,
+                      gap: selected.data.lineGap ?? 5,
+                      label: selected.data.label,
+                      labelDirection: selected.data.lineLabelDirection,
+                      labelHtml: selected.data.lineLabelHtml,
+                      labelColor: selected.data.textColor,
+                      labelFill: selected.data.fill,
+                      labelBorder: selected.data.border,
+                      labelBorderWidth: selected.data.borderWidth,
+                      labelRadius: selected.data.radius,
+                      labelPadding: selected.data.padding,
+                      labelFontFamily: selected.data.fontFamily,
+                      labelFontSize: selected.data.fontSize,
+                      labelFontWeight: selected.data.fontWeight,
+                      labelAlign: selected.data.align,
+                    }}
+                    update={(patch) => updateSelected({
+                      ...(patch.route ? { lineRoute: patch.route } : {}),
+                      ...(patch.arrow ? { lineArrow: patch.arrow } : {}),
+                      ...(patch.stroke ? { lineStroke: patch.stroke } : {}),
+                      ...(patch.width !== undefined ? { lineWidth: patch.width } : {}),
+                      ...(patch.dashed !== undefined ? { lineDashed: patch.dashed } : {}),
+                      ...(patch.dash !== undefined ? { lineDash: patch.dash } : {}),
+                      ...(patch.gap !== undefined ? { lineGap: patch.gap } : {}),
+                      ...(patch.label !== undefined ? { label: patch.label } : {}),
+                      ...(patch.labelDirection ? { lineLabelDirection: patch.labelDirection } : {}),
+                      ...(patch.labelHtml !== undefined ? { lineLabelHtml: patch.labelHtml } : {}),
+                      ...(patch.labelColor ? { textColor: patch.labelColor } : {}),
+                      ...(patch.labelFill ? { fill: patch.labelFill } : {}),
+                      ...(patch.labelBorder ? { border: patch.labelBorder } : {}),
+                      ...(patch.labelBorderWidth !== undefined ? { borderWidth: patch.labelBorderWidth } : {}),
+                      ...(patch.labelRadius !== undefined ? { radius: patch.labelRadius } : {}),
+                      ...(patch.labelPadding !== undefined ? { padding: patch.labelPadding } : {}),
+                      ...(patch.labelFontFamily ? { fontFamily: patch.labelFontFamily } : {}),
+                      ...(patch.labelFontSize !== undefined ? { fontSize: patch.labelFontSize } : {}),
+                      ...(patch.labelFontWeight !== undefined ? { fontWeight: patch.labelFontWeight } : {}),
+                      ...(patch.labelAlign ? { align: patch.labelAlign } : {}),
+                    })}
+                    includeLabelColors={false}
+                    includeRouting={false}
+                  />
+                )}
+                {selectedEdge && activeTab === "connector" && (
+                  <ConnectorPanel data={selectedEdge.data!} update={updateEdge} />
+                )}
+              </div>
               <button
                 className="delete-object"
                 onClick={() => {
