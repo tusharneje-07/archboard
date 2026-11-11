@@ -2383,8 +2383,18 @@ function Editor({ project }: { project: Project }) {
                  setSelectedId(node.id);
                  setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id, nodeIds });
                }}
-                onNodeClick={(_, n) => {
+                onNodeClick={(event, n) => {
                   setContextMenu(null);
+                  if (event.ctrlKey || event.metaKey) {
+                    setEdges((items) => items.map((item) => ({ ...item, selected: false })));
+                    if (n.selected) {
+                      if (selectedId === n.id) {
+                        const fallback = nodes.find((item) => item.id !== n.id && item.selected);
+                        setSelectedId(fallback?.id ?? "");
+                      }
+                    } else setSelectedId(n.id);
+                    return;
+                  }
                   setSelectedId(n.id);
                   setNodes((items) => items.map((item) => ({ ...item, selected: item.id === n.id })));
                   setEdges((items) => items.map((item) => ({ ...item, selected: false })));
@@ -2432,6 +2442,7 @@ function Editor({ project }: { project: Project }) {
               zoomOnScroll={false}
               selectionOnDrag
               selectionMode={SelectionMode.Partial}
+              multiSelectionKeyCode={["Control", "Meta"]}
               snapToGrid={snap}
               snapGrid={[16, 16]}
               fitView
