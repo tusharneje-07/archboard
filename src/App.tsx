@@ -1192,6 +1192,7 @@ function PresentationView({ project, showExit = true, showToolbar = true }: { pr
       connectable: false,
       deletable: false,
       focusable: false,
+      selected: false,
       };
     });
   }, [project.nodes]);
@@ -1208,6 +1209,7 @@ function PresentationView({ project, showExit = true, showToolbar = true }: { pr
         selectable: false,
         deletable: false,
         focusable: false,
+        selected: false,
       }));
   }, [nodes, project.edges]);
   useEffect(() => {
