@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import MonacoEditor, { type OnMount } from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
 import { create } from "zustand";
 import DOMPurify from "dompurify";
-import { toJpeg, toPng, toSvg } from "html-to-image";
 import { deflateCompress, deflateDecompress, type CompressedProject } from "./compression";
 import { huffmanDecompress, type HuffmanCompressed } from "./huffman";
 import {
@@ -80,6 +79,8 @@ import {
   Waypoints,
   X,
 } from "lucide-react";
+
+const MonacoEditor = lazy(() => import("@monaco-editor/react"));
 
 type ShapeKind =
   | "rectangle"
@@ -1498,8 +1499,8 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
           const selected = selectedIds.has(project.id);
           return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}>
             <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
-            <button className="project-preview" onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
-            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label="Open project" onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label="Rename project" onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
+            <button className="project-preview" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
+            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label={`Rename ${project.name}`} onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" aria-label={`Duplicate ${project.name}`} onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" aria-label={`Delete ${project.name}`} onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
           </article>;
         })}
       </div>
@@ -2149,7 +2150,7 @@ function Editor({ project }: { project: Project }) {
     if (frame && frame.id !== node.parentId && framePosition) { snapshot(); setNodes((items) => arrangeFrame(frame.id, items.map((item) => item.id === node.id ? { ...item, parentId: frame.id, extent: "parent" as const, position: { x: absolute.x - framePosition.x, y: absolute.y - framePosition.y } } : item))); }
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
-   useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 200, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, oldFlex = element.style.flex, oldOverflow = element.style.overflow, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; element.style.flex = "0 0 auto"; element.style.overflow = "visible"; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => requestAnimationFrame(() => { toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px`, flex: "0 0 auto", overflow: "visible" } }).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; element.style.flex = oldFlex; element.style.overflow = oldOverflow; reactFlow.setViewport(viewport); }); })); }, [exportOpen, exportTransparent, nodes, edges]);
+   useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 200, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, oldFlex = element.style.flex, oldOverflow = element.style.overflow, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; element.style.flex = "0 0 auto"; element.style.overflow = "visible"; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => requestAnimationFrame(() => { void import("html-to-image").then(({ toPng }) => toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px`, flex: "0 0 auto", overflow: "visible" } })).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; element.style.flex = oldFlex; element.style.overflow = oldOverflow; reactFlow.setViewport(viewport); }); })); }, [exportOpen, exportTransparent, nodes, edges]);
   const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat, overrides: { transparent?: boolean; quality?: number; dpi?: number } = {}) => {
     if (format === "json") { exportJson(); setExportOpen(false); return; }
     if (!canvas.current || exportBusyRef.current) return;
@@ -2172,6 +2173,7 @@ function Editor({ project }: { project: Project }) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const exportStyle = { width: `${exportWidth}px`, height: `${exportHeight}px`, flex: "0 0 auto", overflow: "visible" };
       const options = { backgroundColor, quality: quality / 100, pixelRatio: dpi / 96, width: exportWidth, height: exportHeight, style: exportStyle };
+      const { toPng, toJpeg, toSvg } = await import("html-to-image");
       const data = format === "png" ? await toPng(canvas.current, options) : format === "jpg" ? await toJpeg(canvas.current, options) : await toSvg(canvas.current, { backgroundColor, width: exportWidth, height: exportHeight, style: exportStyle });
       const a = document.createElement("a");
       a.href = data;
@@ -2314,7 +2316,7 @@ function Editor({ project }: { project: Project }) {
            </div></>}
              {leftTab === "code" && <div className="code-panel">
               <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><div className="code-panel-actions"><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button><button className="quiet" onClick={() => setCodeFullscreen(true)} title="Open code in full screen"><Maximize2 size={14} /> Full screen</button></div></div>
-               {!codeFullscreen && <MonacoEditor
+               {!codeFullscreen && <Suspense fallback={<div className="diagram-monaco-editor" />}><MonacoEditor
                  className="diagram-monaco-editor"
                  height="100%"
                 language="json"
@@ -2323,7 +2325,7 @@ function Editor({ project }: { project: Project }) {
                 onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }}
                 onChange={(value) => setCodeDraft(value ?? "")}
                  options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
-               />}
+               /></Suspense>}
              {codeError && <p className="code-error">{codeError}</p>}
              <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button>
            </div>}
@@ -2645,7 +2647,7 @@ function Editor({ project }: { project: Project }) {
         {codeFullscreen && <div className="code-fullscreen-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCodeFullscreen(false)}>
           <section className="code-fullscreen" role="dialog" aria-modal="true" aria-labelledby="fullscreen-code-title">
             <header className="code-fullscreen-head"><div><span className="eyebrow">Editable source</span><h2 id="fullscreen-code-title">Diagram JSON</h2></div><div className="code-panel-actions"><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }}>Refresh</button><button className="quiet" onClick={() => setCodeFullscreen(false)} title="Close full screen"><X size={16} /> Close</button></div></header>
-            <div className="code-fullscreen-editor"><MonacoEditor height="100%" language="json" theme="light" value={codeDraft} onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }} onChange={(value) => setCodeDraft(value ?? "")} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 14, bottom: 14 } }} /></div>
+            <div className="code-fullscreen-editor"><Suspense fallback={<div className="code-fullscreen-editor" />}><MonacoEditor height="100%" language="json" theme="light" value={codeDraft} onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }} onChange={(value) => setCodeDraft(value ?? "")} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 14, bottom: 14 } }} /></Suspense></div>
             {codeError && <p className="code-error">{codeError}</p>}
             <footer className="code-fullscreen-actions"><button onClick={() => setCodeFullscreen(false)}>Close</button><button className="primary" onClick={() => { applyDiagramJson(codeDraft); setCodeFullscreen(false); }}><FileJson size={14} /> Apply JSON</button></footer>
           </section>

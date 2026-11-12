@@ -23,4 +23,7 @@ function viewArchboardDigDevApi(): Plugin {
   }
 }
 
-export default defineConfig({ plugins: [react(), viewArchboardDigDevApi()] })
+export default defineConfig({
+  plugins: [react(), viewArchboardDigDevApi()],
+  build: { sourcemap: true },
+})

@@ -1,0 +1,7 @@
+# Archboard
+
+Archboard is a local-first system architecture diagram editor for dense, technical diagrams. It runs entirely in the browser and stores projects in local storage.
+
+- [Archboard app](https://archboard-iota.vercel.app/): Create, edit, present, and export architecture diagrams.
+- [MCP diagram endpoint](https://archboard-iota.vercel.app/api/mcp): Generate Archboard diagrams from a nodes and edges JSON payload.
+- [Source code](https://github.com/tusharneje-07/archboard): React, TypeScript, Vite, and React Flow implementation.
