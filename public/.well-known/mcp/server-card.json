@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+  "name": "app.vercel.archboard-iota/archboard",
+  "version": "1.1.0",
+  "title": "Archboard Diagram Generator",
+  "description": "Generate Archboard architecture diagrams from a nodes and edges JSON payload.",
+  "websiteUrl": "https://archboard-iota.vercel.app/",
+  "repository": {
+    "url": "https://github.com/tusharneje-07/archboard",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://archboard-iota.vercel.app/api/mcp"
+    }
+  ]
+}

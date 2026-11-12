@@ -1,0 +1,27 @@
+{
+  "specVersion": "1.0",
+  "entries": [
+    {
+      "identifier": "urn:air:archboard-iota.vercel.app:mcp:generate-architecture-diagram",
+      "displayName": "Archboard Diagram Generator",
+      "type": "application/mcp-server-card+json",
+      "url": "https://archboard-iota.vercel.app/.well-known/mcp/server-card.json",
+      "description": "Generate Archboard architecture diagrams from a nodes and edges JSON payload.",
+      "representativeQueries": [
+        "Generate an architecture diagram for a web application",
+        "Create an Archboard system diagram from this JSON"
+      ],
+      "capabilities": [
+        "generate_architecture_diagram"
+      ],
+      "tags": [
+        "architecture",
+        "diagram",
+        "mcp",
+        "visualization"
+      ],
+      "version": "1.1.0",
+      "updatedAt": "2026-11-12T00:00:00Z"
+    }
+  ]
+}
