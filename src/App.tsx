@@ -1378,8 +1378,11 @@ function relativeUpdatedLabel(timestamp: number) {
   return `${years} ${years === 1 ? "year" : "years"} ago`;
 }
 type ProjectDialog = { type: "rename"; project: ProjectSummary } | { type: "delete"; projects: ProjectSummary[] };
-function BrandMark() {
-  return <div className="brand-mark"><span>AB</span><div><strong>archboard</strong><small>systems, clearly</small></div></div>;
+function BrandMark({ onClick }: { onClick?: () => void }) {
+  const content = <><span>AB</span><div><strong>archboard</strong><small>systems, clearly</small></div></>;
+  return onClick
+    ? <button className="brand-mark brand-mark-button" type="button" onClick={onClick} title="Go to home" aria-label="Go to home">{content}</button>
+    : <div className="brand-mark">{content}</div>;
 }
 function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh: () => void }) {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
@@ -2242,7 +2245,7 @@ function Editor({ project }: { project: Project }) {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <BrandMark />
+        <BrandMark onClick={goHome} />
         <div className="document-title">
           <span className="live-dot" /> {editingName ? <input className="document-title-input" autoFocus value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={saveProjectName} onKeyDown={(event) => { if (event.key === "Enter") saveProjectName(); if (event.key === "Escape") { setNameDraft(project.name); setEditingName(false); } }} /> : <button className="document-name" onClick={() => setEditingName(true)} title="Rename project">{nameDraft}</button>}{" "}
           <span className="saved">Saved locally</span>

@@ -92,6 +92,8 @@ button {
   gap: 10px;
   min-width: 215px;
 }
+.brand-mark-button { padding: 0; text-align: left; }
+.brand-mark-button:hover strong { color: #00546d; }
 .brand-mark > span {
   display: grid;
   place-items: center;
