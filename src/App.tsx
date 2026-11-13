@@ -1556,6 +1556,7 @@ function Editor({ project }: { project: Project }) {
   const codeEditorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const codeDecorationRef = useRef<string[]>([]);
   const selectionStart = useRef<{ x: number; y: number } | null>(null);
+  const layerAnchor = useRef("");
   const inspectorScrollRef = useRef<HTMLDivElement | null>(null);
   const [initialInspectorScroll] = useState(readInspectorScrollPositions);
   const inspectorScrollPositions = useRef<InspectorScrollPositions>(initialInspectorScroll);
@@ -1602,10 +1603,35 @@ function Editor({ project }: { project: Project }) {
     closeActiveProject();
     navigate("/");
   };
-  const selectLayer = (id: string) => {
-    setSelectedId(id);
-    setNodes((items) => items.map((item) => ({ ...item, selected: item.id === id })));
-    setEdges((items) => items.map((item) => ({ ...item, selected: item.id === id })));
+  const applyLayerSelection = (ids: string[], primary: string) => {
+    const selected = new Set(ids);
+    setSelectedId(primary);
+    setNodes((items) => items.map((item) => (item.selected === selected.has(item.id) ? item : { ...item, selected: selected.has(item.id) })));
+    setEdges((items) => items.map((item) => (item.selected === selected.has(item.id) ? item : { ...item, selected: selected.has(item.id) })));
+  };
+  const selectLayer = (id: string, options: { toggle: boolean; range: boolean; order: string[] }) => {
+    const selectedNow = new Set([
+      ...nodes.filter((item) => item.selected).map((item) => item.id),
+      ...edges.filter((item) => item.selected).map((item) => item.id),
+    ]);
+    if (options.range && layerAnchor.current) {
+      const from = options.order.indexOf(layerAnchor.current), to = options.order.indexOf(id);
+      if (from >= 0 && to >= 0) {
+        const [start, end] = from <= to ? [from, to] : [to, from];
+        applyLayerSelection(options.order.slice(start, end + 1), id);
+        return;
+      }
+    }
+    if (options.toggle) {
+      const next = new Set(selectedNow);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      layerAnchor.current = id;
+      applyLayerSelection([...next], next.has(id) ? id : next.has(selectedId) ? selectedId : [...next][0] ?? "");
+      return;
+    }
+    layerAnchor.current = id;
+    applyLayerSelection([id], id);
   };
   useEffect(() => {
     const host = document.createElement("div");
@@ -1626,12 +1652,15 @@ function Editor({ project }: { project: Project }) {
       <LayerView
         nodes={nodes}
         edges={edges}
-        selectedId={selectedId}
+        selectedIds={new Set([
+          ...nodes.filter((item) => item.selected).map((item) => item.id),
+          ...edges.filter((item) => item.selected).map((item) => item.id),
+        ])}
         select={selectLayer}
         moveToFrame={moveNodeToFrame}
       />,
     );
-  }, [nodes, edges, selectedId]);
+  }, [nodes, edges]);
   const diagramJson = () => JSON.stringify({ nodes, edges }, null, 2);
   const parseDiagramJson = (source: string): { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] } => {
     const value: unknown = JSON.parse(source);
@@ -3367,14 +3396,14 @@ function ConnectorPanel({
 function LayerView({
   nodes,
   edges,
-  selectedId,
+  selectedIds,
   select,
   moveToFrame,
 }: {
   nodes: Node<NodeData>[];
   edges: Edge<EdgeData>[];
-  selectedId: string;
-  select: (id: string) => void;
+  selectedIds: Set<string>;
+  select: (id: string, options: { toggle: boolean; range: boolean; order: string[] }) => void;
   moveToFrame: (nodeId: string, frameId?: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -3382,6 +3411,19 @@ function LayerView({
   const roots = nodes.filter((node) => !node.parentId).slice().reverse();
   const cleanLabel = (value?: string) => (value ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
   const nodeName = (id: string) => cleanLabel(nodes.find((node) => node.id === id)?.data.label) || id;
+  const visibleOrder = () => {
+    const order: string[] = [];
+    const walk = (node: Node<NodeData>) => {
+      order.push(node.id);
+      const children = nodes.filter((child) => child.parentId === node.id).slice().reverse();
+      if (children.length && expanded[node.id] !== false) children.forEach(walk);
+    };
+    if (canvasExpanded) nodes.filter((node) => !node.parentId).slice().reverse().forEach(walk);
+    return order;
+  };
+  const selectRow = (event: React.MouseEvent, id: string) => {
+    select(id, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey, order: visibleOrder() });
+  };
   const renderLayer = (node: Node<NodeData>): React.ReactNode => {
     const children = nodes.filter((child) => child.parentId === node.id).slice().reverse();
     const isExpanded = expanded[node.id] !== false;
@@ -3390,7 +3432,7 @@ function LayerView({
     return (
       <div className="layer-node" key={node.id}>
         <button
-          className={`layer-row${node.id === selectedId ? " active" : ""}`}
+          className={`layer-row${selectedIds.has(node.id) ? " active" : ""}`}
           type="button"
           title={label}
           draggable
@@ -3398,7 +3440,7 @@ function LayerView({
           onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/archboard-layer", node.id); event.dataTransfer.setData("text/plain", node.id); }}
           onDragOver={(event) => { if (node.data.kind === "container") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
           onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const nodeId = event.dataTransfer.getData("application/archboard-layer") || event.dataTransfer.getData("text/plain"); if (nodeId && nodeId !== node.id && node.data.kind === "container") moveToFrame(nodeId, node.id); }}
-          onClick={() => select(node.id)}
+          onClick={(event) => selectRow(event, node.id)}
         >
           <span className={`layer-caret${children.length ? "" : " empty"}`} onClick={(event) => { if (!children.length) return; event.stopPropagation(); setExpanded((current) => ({ ...current, [node.id]: current[node.id] === false })); }}>
             {children.length ? isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}
@@ -3438,7 +3480,7 @@ function LayerView({
           <div className="layer-children">
             {edges.slice().reverse().map((edge) => {
               const label = cleanLabel(edge.data?.label) || `${nodeName(edge.source)} → ${nodeName(edge.target)}`;
-              return <button key={edge.id} className={`layer-row layer-edge-row${edge.id === selectedId ? " active" : ""}`} type="button" title={label} onClick={() => select(edge.id)}>
+              return <button key={edge.id} className={`layer-row layer-edge-row${selectedIds.has(edge.id) ? " active" : ""}`} type="button" title={label} onClick={(event) => selectRow(event, edge.id)}>
                 <span className="layer-caret empty" />
                 <span className="layer-kind-icon connector"><Waypoints size={13} strokeWidth={2.1} /></span>
                 <span className="layer-name">{label}</span>
