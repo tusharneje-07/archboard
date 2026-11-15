@@ -23,12 +23,12 @@ Generate the diagram in this order: nodes, positions and sizes, then edges. Neve
 - Use `arrow: "single"` for normal flow. The arrow always points from `source` to `target`.
 - Use `route: "orthogonal"` for a hierarchy or process flow. Use `route: "straight"` only when the direct corridor is clear.
 - Use `route: "free"` only for a genuine feedback, retry, error, or return loop. Never use free curves for ordinary parent-to-child edges.
-- For a node above a child, use `sourceHandle: "bottom"` and omit `targetHandle`. The default target is the child's top handle.
+- For a node above a child, use `sourceHandle: "bottom"` and omit `targetHandle`. The default target is the child's top target handle.
 - For a node left of a child, use `sourceHandle: "right"` and `targetHandle: "left-target"`.
 - For a node right of a child, use `sourceHandle: "left"` and `targetHandle: "right-target"`.
 - For a node below a child, use `sourceHandle: "top"` and `targetHandle: "bottom-target"`.
 - Do not use `sourceHandle: "left"` or `sourceHandle: "right"` for a vertical parent-to-child connection unless the user explicitly requests a side connection.
-- Do not use `targetHandle: "top"`; omit it. The only valid explicit target handles are `bottom-target`, `left-target`, and `right-target`.
+- Do not use `targetHandle: "top"`; use `top-target` when explicitly selecting the cardinal top point, or omit `targetHandle` to use the default top target. In the interactive editor, explicit target IDs are generated connection-point IDs with a `-target` suffix, such as `top-target`, `right-target`, `bottom-target`, `left-target`, `top-0-target`, `e1-target`, and `d3-target`. The MCP renderer is a separate fixed four-sided contract: its explicit target IDs remain `bottom-target`, `left-target`, and `right-target`, and its top target must omit `targetHandle`.
 - Do not reverse `source` and `target` to make an arrow look right. Fix the semantic direction first, then choose handles.
 - Do not use `double` for ordinary request/response flows. Use two clearly directed `single` edges if the directions need separate labels.
 
@@ -127,10 +127,22 @@ Every node uses this base structure:
 - `rounded`: component with rounded corners.
 - `ellipse`: circular or oval component.
 - `diamond`: decision or transformation component.
-- `diamond` nodes must always be square: keep `style.width === style.height` and `data.width === data.height`. Their four connection handles are the four vertices: `top` is the top vertex, `right` is the right vertex, `bottom` is the bottom vertex, and `left` is the left vertex. Do not attach a connector to the middle of a diamond edge.
+- `diamond` nodes must always be square: keep `style.width === style.height` and `data.width === data.height`. With the default four-point layout, `top`, `right`, `bottom`, and `left` are the four vertices; larger layouts add points at equal-perimeter intervals along the diamond edges. Do not attach a connector away from the generated perimeter points.
 - `text`: standalone annotation. Use `fill: "transparent"`, `border: "transparent"`, and `borderWidth: 0`.
 - `image`: image with optional text and configurable image placement.
 - `container`: Frame or system boundary. Frames must be listed before their children.
+
+### Configurable connection points
+
+Non-line, non-text shapes support exactly `4`, `8`, `12`, or `16` connection points per shape. The default is `4`. This setting is stored as `data.connectionPoints` and applies to `rectangle`, `rounded`, `ellipse`, `diamond`, `image`, and `container`; `line` and `text` shapes do not expose connection points.
+
+- Rectangle-like shapes (`rectangle`, `rounded`, `image`, and `container`) distribute points with equal spacing per side.
+- Ellipses distribute points at equal-angle intervals around the perimeter.
+- Diamonds distribute points at equal-perimeter intervals around the four edges. Keep diamonds square.
+- Every point has both a source handle and a target handle. A source handle uses the point ID; its target counterpart uses the same ID with `-target` appended.
+- The cardinal source IDs remain `top`, `right`, `bottom`, and `left`, with cardinal target IDs `top-target`, `right-target`, `bottom-target`, and `left-target`. Additional IDs are shape/count-dependent; examples include `top-0`, `top-1`, `e1`, and `d3`, with corresponding target IDs `top-0-target`, `top-1-target`, `e1-target`, and `d3-target`.
+- Omitting `targetHandle` still selects the default top target. Use `top-target` when an explicit cardinal top target ID is needed.
+- When the connection-point count changes, remap every attached source or target edge to the nearest point in the new layout. Do not leave an old point ID attached to the edge.
 
 ### Image node properties
 
@@ -323,16 +335,22 @@ The application also renders arrow overlays from `data.arrow`, so `data.arrow` i
 
 This section is mandatory. Arrow direction is determined by `source -> target`, not by the visual left/right position alone.
 
-The custom node exposes these handles:
+### Interactive editor handles
 
-| Physical side | Source handle ID | Target handle ID |
+The interactive custom node exposes the generated connection points for the node's `data.connectionPoints` value:
+
+| Cardinal point | Source handle ID | Target handle ID |
 | --- | --- | --- |
-| Top | `top` | omit `targetHandle` |
+| Top | `top` | `top-target` |
+| Right | `right` | `right-target` |
 | Bottom | `bottom` | `bottom-target` |
 | Left | `left` | `left-target` |
-| Right | `right` | `right-target` |
 
-The top target handle is the default React Flow target and has no explicit ID. Do not write `targetHandle: "top"`; omit `targetHandle` for a top target.
+Additional source IDs are generated by the shape geometry, such as `top-0`, `top-1`, `e1`, and `d3`; each has a target ID formed by appending `-target`. The top target handle also has the explicit ID `top-target`, but a missing `targetHandle` remains the default top target. Do not write `targetHandle: "top"`.
+
+### MCP renderer contract
+
+The MCP artifact renderer intentionally remains fixed to four-sided handles. It does not implement `data.connectionPoints` or extra point IDs. For MCP-rendered diagrams, use source handles `top`, `bottom`, `left`, and `right`; use explicit target handles `bottom-target`, `left-target`, and `right-target`; and omit `targetHandle` for the top target. Do not send `top-target` or generated extra IDs to the MCP renderer.
 
 ### Correct directional templates
 
@@ -547,9 +565,11 @@ Reject and repair the JSON if any ordinary parent-to-child edge is curved, uses 
 - Every child has `extent: "parent"` and a Frame-relative position.
 - Every edge has `id`, `source`, `target`, `type: "smart"`, and valid `data`.
 - Every `source` and `target` exists in `nodes`.
-- Every `sourceHandle` is one of `top`, `bottom`, `left`, or `right`.
-- Every explicit `targetHandle` is one of `bottom-target`, `left-target`, or `right-target`.
-- Top target connections omit `targetHandle`.
+- Every applicable node has `data.connectionPoints` set to exactly `4`, `8`, `12`, or `16`; if omitted, it means `4`. Line and text nodes do not use this setting.
+- In the interactive editor, every `sourceHandle` is a point ID generated for the source node's kind and count: a cardinal ID (`top`, `right`, `bottom`, or `left`) or an extra ID such as `top-0`, `e1`, or `d3`.
+- In the interactive editor, every explicit `targetHandle` is the corresponding generated point ID with `-target` appended, including `top-target`, `right-target`, `bottom-target`, `left-target`, and extra IDs such as `e1-target` or `d3-target`.
+- A missing `targetHandle` selects the default top target; do not write `targetHandle: "top"`.
+- For the MCP renderer only, use its fixed source IDs `top`, `bottom`, `left`, and `right`, its explicit target IDs `bottom-target`, `left-target`, and `right-target`, and omit the top `targetHandle`.
 - `arrow: "single"` points from source to target; `arrow: "double"` is reserved for bidirectional exchange.
 - Marker metadata agrees with `data.arrow`: single has only `markerEnd`, double has both markers, and none has neither.
 - Routes and labels match the intended diagram flow.
