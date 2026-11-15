@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { OnMount } from "@monaco-editor/react";
 import { create } from "zustand";
@@ -23,6 +23,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type Edge,
   type EdgeProps,
@@ -91,6 +92,7 @@ type ShapeKind =
   | "image"
   | "container"
   | "line";
+type ConnectionPointCount = 4 | 8 | 12 | 16;
 type NodeData = {
   kind: ShapeKind;
   label: string;
@@ -118,6 +120,7 @@ type NodeData = {
   height?: number;
   clipContent?: boolean;
   layout?: "free" | "grid" | "horizontal" | "vertical";
+  connectionPoints?: ConnectionPointCount;
   imageUrl?: string;
   imagePosition?: "left" | "right" | "top" | "bottom" | "center";
   imageFit?: "cover" | "contain" | "fill";
@@ -319,6 +322,7 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
   vertical: "center",
   padding: 12,
   layout: kind === "container" ? "grid" : "free",
+  connectionPoints: 4,
   imageUrl: "https://placehold.co/640x360/e8f7f8/176b7d?text=Image",
   imagePosition: "left",
   imageFit: "contain",
@@ -335,6 +339,110 @@ const baseData = (kind: ShapeKind, label?: string): NodeData => ({
    lineLabelDirection: "horizontal",
    lineLabelHtml: false,
  });
+const connectionPointOptions: ConnectionPointCount[] = [4, 8, 12, 16];
+type ConnectionSide = "top" | "right" | "bottom" | "left";
+type ConnectionPoint = { id: string; side: ConnectionSide; x: number; y: number };
+function connectionPointCount(value?: number): ConnectionPointCount {
+  return connectionPointOptions.find((option) => option === value) ?? 4;
+}
+function rectangleConnectionPoints(count: ConnectionPointCount): ConnectionPoint[] {
+  const perSide = count / 4;
+  const sides: { side: ConnectionSide; point: (ratio: number) => { x: number; y: number } }[] = [
+    { side: "top", point: (ratio) => ({ x: ratio * 100, y: 0 }) },
+    { side: "right", point: (ratio) => ({ x: 100, y: ratio * 100 }) },
+    { side: "bottom", point: (ratio) => ({ x: 100 - ratio * 100, y: 100 }) },
+    { side: "left", point: (ratio) => ({ x: 0, y: 100 - ratio * 100 }) },
+  ];
+  return sides.flatMap(({ side, point }) =>
+    Array.from({ length: perSide }, (_, index) => {
+      const ratio = (index + 0.5) / perSide;
+      const isCenter = perSide % 2 === 1 && index === (perSide - 1) / 2;
+      return { id: isCenter ? side : `${side}-${index}`, side, ...point(ratio) };
+    }),
+  );
+}
+function ellipseConnectionPoints(count: ConnectionPointCount): ConnectionPoint[] {
+  return Array.from({ length: count }, (_, index) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / count;
+    const degrees = ((angle * 180) / Math.PI + 360) % 360;
+    const side: ConnectionSide = degrees >= 315 || degrees < 45 ? "right" : degrees < 135 ? "bottom" : degrees < 225 ? "left" : "top";
+    const cardinal = index === 0 ? "top" : index === count / 4 ? "right" : index === count / 2 ? "bottom" : index === (count * 3) / 4 ? "left" : "";
+    return { id: cardinal || `e${index}`, side, x: 50 + 50 * Math.cos(angle), y: 50 + 50 * Math.sin(angle) };
+  });
+}
+function diamondConnectionPoints(count: ConnectionPointCount): ConnectionPoint[] {
+  return Array.from({ length: count }, (_, index) => {
+    const fraction = index / count;
+    const segment = Math.min(3, Math.floor(fraction * 4));
+    const ratio = fraction * 4 - segment;
+    const coordinates = segment === 0
+      ? { x: 50 + 50 * ratio, y: 50 * ratio }
+      : segment === 1
+        ? { x: 100 - 50 * ratio, y: 50 + 50 * ratio }
+        : segment === 2
+          ? { x: 50 - 50 * ratio, y: 100 - 50 * ratio }
+          : { x: 50 * ratio, y: 50 - 50 * ratio };
+    const side: ConnectionSide = segment === 0
+      ? (ratio < 0.5 ? "top" : "right")
+      : segment === 1
+        ? (ratio < 0.5 ? "right" : "bottom")
+        : segment === 2
+          ? (ratio < 0.5 ? "bottom" : "left")
+          : (ratio < 0.5 ? "left" : "top");
+    const cardinal = index === 0 ? "top" : index === count / 4 ? "right" : index === count / 2 ? "bottom" : index === (count * 3) / 4 ? "left" : "";
+    return { id: cardinal || `d${index}`, side, ...coordinates };
+  });
+}
+function connectionPointsFor(kind: ShapeKind, value?: number): ConnectionPoint[] {
+  if (kind === "line" || kind === "text") return [];
+  const count = connectionPointCount(value);
+  if (kind === "ellipse") return ellipseConnectionPoints(count);
+  if (kind === "diamond") return diamondConnectionPoints(count);
+  return rectangleConnectionPoints(count);
+}
+const connectionSidePosition = (side: ConnectionSide) =>
+  side === "top" ? Position.Top : side === "bottom" ? Position.Bottom : side === "left" ? Position.Left : Position.Right;
+const connectionPointStyle = (point: ConnectionPoint): React.CSSProperties => ({
+  left: `${point.x}%`,
+  top: `${point.y}%`,
+  right: "auto",
+  bottom: "auto",
+  transform: "translate(-50%, -50%)",
+});
+function nearestConnectionPoint(from: ConnectionPoint, points: ConnectionPoint[], width: number, height: number): ConnectionPoint {
+  const distance = (point: ConnectionPoint) => {
+    const dx = ((point.x - from.x) / 100) * width;
+    const dy = ((point.y - from.y) / 100) * height;
+    return dx * dx + dy * dy;
+  };
+  return points.reduce((nearest, point) => (distance(point) < distance(nearest) ? point : nearest), points[0]);
+}
+function remapConnectionHandles(
+  edges: Edge<EdgeData>[],
+  nodeId: string,
+  kind: ShapeKind,
+  previousCount: ConnectionPointCount,
+  nextCount: ConnectionPointCount,
+  width: number,
+  height: number,
+): Edge<EdgeData>[] {
+  if (previousCount === nextCount) return edges;
+  const previousPoints = connectionPointsFor(kind, previousCount);
+  const nextPoints = connectionPointsFor(kind, nextCount);
+  if (!previousPoints.length || !nextPoints.length) return edges;
+  return edges.map((edge) => {
+    let updated = edge;
+    if (edge.source === nodeId) {
+      const previous = previousPoints.find((point) => point.id === (edge.sourceHandle ?? previousPoints[0].id));
+      if (previous) updated = { ...updated, sourceHandle: nearestConnectionPoint(previous, nextPoints, width, height).id };
+    }
+    if (edge.target === nodeId) {
+      const previous = previousPoints.find((point) => point.id === (edge.targetHandle ? edge.targetHandle.replace(/-target$/, "") : previousPoints[0].id));
+      if (previous) updated = { ...updated, targetHandle: `${nearestConnectionPoint(previous, nextPoints, width, height).id}-target` };
+    }
+    return updated;
+  });
+}
 const initialNodes: Node<NodeData>[] = [
   {
     id: "client",
@@ -760,6 +868,14 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
   const update = useDiagram((s) => s.setDiagram);
   const nodes = useDiagram((s) => s.nodes),
     edges = useDiagram((s) => s.edges);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const connectionLayout = `${data.kind}:${connectionPointCount(data.connectionPoints)}`;
+  const previousConnectionLayout = useRef(connectionLayout);
+  useEffect(() => {
+    if (previousConnectionLayout.current === connectionLayout) return;
+    previousConnectionLayout.current = connectionLayout;
+    updateNodeInternals(id);
+  }, [connectionLayout, id, updateNodeInternals]);
   const input = useRef<HTMLDivElement>(null);
   const updateLabel = (value: string) =>
     update(
@@ -871,18 +987,12 @@ function ShapeNode({ id, data, selected }: NodeProps<Node<NodeData>>) {
           <Handle type="target" position={Position.Left} id="start" />
           <Handle type="source" position={Position.Right} id="end" />
         </>
-      ) : data.kind !== "text" && (
-        <>
-          <Handle type="target" position={Position.Top} />
-          <Handle type="source" position={Position.Top} id="top" />
-          <Handle type="target" position={Position.Bottom} id="bottom-target" />
-          <Handle type="source" position={Position.Bottom} id="bottom" />
-          <Handle type="target" position={Position.Left} id="left-target" />
-          <Handle type="source" position={Position.Left} id="left" />
-          <Handle type="target" position={Position.Right} id="right-target" />
-          <Handle type="source" position={Position.Right} id="right" />
-        </>
-      )}
+      ) : data.kind !== "text" && connectionPointsFor(data.kind, data.connectionPoints).map((point) => (
+        <Fragment key={point.id}>
+          <Handle type="target" position={connectionSidePosition(point.side)} id={`${point.id}-target`} style={connectionPointStyle(point)} />
+          <Handle type="source" position={connectionSidePosition(point.side)} id={point.id} style={connectionPointStyle(point)} />
+        </Fragment>
+      ))}
       {data.kind !== "line" && !(data.kind === "image" && !data.label.trim()) && <div
         ref={input}
         className="node-copy"
@@ -1198,15 +1308,21 @@ function PresentationView({ project, showExit = true, showToolbar = true }: { pr
     });
   }, [project.nodes]);
   const edges = useMemo(() => {
-    const nodeIds = new Set(nodes.map((node) => node.id));
-    const sourceHandles = new Set(["top", "bottom", "left", "right"]);
-    const targetHandles = new Set(["bottom-target", "left-target", "right-target"]);
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const isValidHandle = (nodeId: string, handle: string | null | undefined, type: "source" | "target") => {
+      if (!handle) return true;
+      const node = nodesById.get(nodeId);
+      if (!node) return false;
+      if (node.data.kind === "line") return type === "source" ? handle === "end" : handle === "start";
+      const points = connectionPointsFor(node.data.kind, node.data.connectionPoints);
+      return points.some((point) => (type === "source" ? point.id === handle : `${point.id}-target` === handle));
+    };
     return project.edges
-      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target))
+      .filter((edge) => nodesById.has(edge.source) && nodesById.has(edge.target))
       .map((edge) => ({
         ...edge,
-        sourceHandle: sourceHandles.has(edge.sourceHandle ?? "") ? edge.sourceHandle : undefined,
-        targetHandle: targetHandles.has(edge.targetHandle ?? "") ? edge.targetHandle : undefined,
+        sourceHandle: isValidHandle(edge.source, edge.sourceHandle, "source") ? edge.sourceHandle : undefined,
+        targetHandle: isValidHandle(edge.target, edge.targetHandle, "target") ? edge.targetHandle : undefined,
         selectable: false,
         deletable: false,
         focusable: false,
@@ -2016,6 +2132,13 @@ function Editor({ project }: { project: Project }) {
           : n,
       ),
     );
+    const previousCount = connectionPointCount(selected.data.connectionPoints);
+    const nextCount = connectionPointCount(patch.connectionPoints ?? selected.data.connectionPoints);
+    if (patch.connectionPoints !== undefined && previousCount !== nextCount) {
+      const width = Number(selected.style?.width ?? selected.data.width ?? 170);
+      const height = Number(selected.style?.height ?? selected.data.height ?? 76);
+      setEdges((items) => remapConnectionHandles(items, selected.id, selected.data.kind, previousCount, nextCount, width, height));
+    }
   };
   const updateEdge = (patch: Partial<EdgeData>) => {
     if (!selectedEdge) return;
@@ -3201,6 +3324,24 @@ function AppearancePanel({
         />
         <b>{data.padding}px</b>
       </Field>
+      {data.kind !== "line" && data.kind !== "text" && (
+        <>
+          <div className="section-label">Connections</div>
+          <div className="segmented">
+            {connectionPointOptions.map((count) => (
+              <button
+                key={count}
+                className={connectionPointCount(data.connectionPoints) === count ? "active" : ""}
+                title={`${count} connection points`}
+                onClick={() => update({ connectionPoints: count })}
+              >
+                {count}
+              </button>
+            ))}
+          </div>
+          <p className="helper">Connection dots are spaced evenly around the shape. Existing connectors snap to the nearest dot.</p>
+        </>
+      )}
       {data.kind === "container" && (
         <>
           <div className="section-label">Flow</div>
