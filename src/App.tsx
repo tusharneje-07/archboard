@@ -1920,6 +1920,105 @@ function Editor({ project }: { project: Project }) {
     );
     setSelectedId("");
   };
+  const deleteShapes = (ids: string[]) => {
+    const removed = new Set(ids);
+    if (!removed.size) return;
+    snapshot();
+    setNodes((items) => items.filter((item) => !removed.has(item.id)));
+    setEdges((items) =>
+      items.filter(
+        (item) =>
+          !removed.has(item.id) &&
+          !removed.has(item.source) &&
+          !removed.has(item.target),
+      ),
+    );
+    setSelectedId("");
+  };
+  const clipboard = useRef<{
+    nodes: Node<NodeData>[];
+    edges: Edge<EdgeData>[];
+  } | null>(null);
+  const pasteStep = useRef(0);
+  const copySelectedShapes = (): string[] | null => {
+    const ids = new Set(
+      nodes
+        .filter((node) => node.selected || node.id === selectedId)
+        .map((node) => node.id),
+    );
+    if (!ids.size) return null;
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      nodes.forEach((node) => {
+        if (node.parentId && ids.has(node.parentId) && !ids.has(node.id)) {
+          ids.add(node.id);
+          expanded = true;
+        }
+      });
+    }
+    clipboard.current = {
+      nodes: nodes
+        .filter((node) => ids.has(node.id))
+        .map((node) => ({
+          ...node,
+          data: { ...node.data },
+          style: { ...node.style },
+          selected: false,
+        })),
+      edges: edges
+        .filter((edge) => ids.has(edge.source) && ids.has(edge.target))
+        .map((edge) => ({
+          ...edge,
+          data: edge.data ? { ...edge.data } : edge.data,
+          selected: false,
+        })),
+    };
+    pasteStep.current = 0;
+    return [...ids];
+  };
+  const pasteShapes = () => {
+    const payload = clipboard.current;
+    if (!payload?.nodes.length) return;
+    snapshot();
+    pasteStep.current += 1;
+    const offset = 24 * pasteStep.current;
+    const stamp = Date.now();
+    const ids = new Map<string, string>();
+    payload.nodes.forEach((node, index) =>
+      ids.set(node.id, `${node.data.kind}-${stamp}-${index}`),
+    );
+    const pastedNodes: Node<NodeData>[] = payload.nodes.map((node) => {
+      const parentId = node.parentId ? ids.get(node.parentId) : undefined;
+      const position = node.parentId && !parentId ? absolutePosition(node) : node.position;
+      return {
+        ...node,
+        id: ids.get(node.id)!,
+        parentId,
+        extent: parentId ? node.extent : undefined,
+        position: { x: position.x + offset, y: position.y + offset },
+        selected: true,
+        dragging: false,
+      };
+    });
+    const pastedEdges: Edge<EdgeData>[] = payload.edges.map((edge, index) => ({
+      ...edge,
+      id: `edge-${stamp}-${index}`,
+      source: ids.get(edge.source)!,
+      target: ids.get(edge.target)!,
+      selected: false,
+    }));
+    setNodes((items) => [
+      ...items.map((item) => ({ ...item, selected: false })),
+      ...pastedNodes,
+    ]);
+    setEdges((items) => [
+      ...items.map((item) => ({ ...item, selected: false })),
+      ...pastedEdges,
+    ]);
+    setSelectedId(pastedNodes[0].id);
+    setContextMenu(null);
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
@@ -1927,13 +2026,33 @@ function Editor({ project }: { project: Project }) {
         e.shiftKey ? redoDiagram() : undoDiagram();
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "y") redoDiagram();
+      const target = e.target as HTMLElement;
+      const typing =
+        target.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      const selection = window.getSelection();
+      const editingText =
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+        (target.isContentEditable && !!selection && !selection.isCollapsed);
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !editingText) {
+        const key = e.key.toLowerCase();
+        if (key === "c") {
+          if (copySelectedShapes()) e.preventDefault();
+        } else if (key === "x") {
+          const copied = copySelectedShapes();
+          if (copied) {
+            e.preventDefault();
+            deleteShapes(copied);
+          }
+        } else if (key === "v") {
+          if (clipboard.current?.nodes.length) {
+            e.preventDefault();
+            pasteShapes();
+          }
+        }
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
-        const target = e.target as HTMLElement;
-        if (
-          target.isContentEditable ||
-          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-        )
-          return;
+        if (typing) return;
         e.preventDefault();
         deleteSelected();
       }
