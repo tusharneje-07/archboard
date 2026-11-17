@@ -50,7 +50,11 @@ import {
   Download,
   Eraser,
   FileJson,
+  Folder,
+  FolderInput,
+  FolderMinus,
   FolderOpen,
+  FolderPlus,
   Frame,
   Grid3X3,
   Group,
@@ -548,6 +552,7 @@ function loadSavedDiagram() {
   }
 }
 const projectsKey = "archboard-projects";
+const workspacesKey = "archboard-workspaces";
 type ExportFormat = "png" | "svg" | "jpg" | "json";
 type ExportSettings = { format: ExportFormat; transparent: boolean; quality: number; dpi: number };
 const exportSettingsKey = "archboard-export-settings";
@@ -769,7 +774,7 @@ function createProjectRecord() {
 }
 function duplicateProjectRecord(id: string) {
   const source = readProject(id);
-  if (!source) return;
+  if (!source) return null;
   const now = Date.now();
   const copy: Project = {
     ...source,
@@ -781,6 +786,9 @@ function duplicateProjectRecord(id: string) {
     edges: source.edges.map((edge) => ({ ...edge, id: `${edge.id}-${now}`, source: `${edge.source}-${now}`, target: `${edge.target}-${now}`, selected: false })),
   };
   storeProjectRecords([copy]);
+  const folderId = readWorkspaces().membership[id];
+  if (folderId) moveProjectsToWorkspace([copy.id], folderId);
+  return copy.id;
 }
 function renameProjectRecord(id: string, name: string) {
   const now = Date.now();
@@ -798,6 +806,67 @@ function deleteProjectRecords(ids: string[]) {
   writeProjectSummaries(readProjectSummaries(false).filter((project) => !deleted.has(project.id)));
   const active = readActiveProject();
   if (active && deleted.has(active.project.id)) clearActiveProject();
+  const workspaces = readWorkspaces();
+  const membership = Object.fromEntries(
+    Object.entries(workspaces.membership).filter(([projectId]) => !deleted.has(projectId)),
+  );
+  writeWorkspaces({ ...workspaces, membership });
+}
+type WorkspaceFolder = { id: string; name: string; createdAt: number };
+type WorkspaceState = { folders: WorkspaceFolder[]; membership: Record<string, string> };
+function isWorkspaceFolder(value: unknown): value is WorkspaceFolder {
+  if (!value || typeof value !== "object") return false;
+  const folder = value as Partial<WorkspaceFolder>;
+  return typeof folder.id === "string" && typeof folder.name === "string" && typeof folder.createdAt === "number";
+}
+function readWorkspaces(): WorkspaceState {
+  let saved: unknown = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(workspacesKey) || "null");
+  } catch { /* Treat invalid workspace data as absent. */ }
+  if (!saved || typeof saved !== "object") return { folders: [], membership: {} };
+  const folders = Array.isArray((saved as WorkspaceState).folders)
+    ? (saved as WorkspaceState).folders.filter(isWorkspaceFolder)
+    : [];
+  const ids = new Set(folders.map((folder) => folder.id));
+  const membership: Record<string, string> = {};
+  const stored = (saved as WorkspaceState).membership;
+  if (stored && typeof stored === "object") {
+    for (const [projectId, folderId] of Object.entries(stored)) {
+      if (typeof folderId === "string" && ids.has(folderId)) membership[projectId] = folderId;
+    }
+  }
+  return { folders, membership };
+}
+function writeWorkspaces(state: WorkspaceState) {
+  localStorage.setItem(workspacesKey, JSON.stringify(state));
+}
+function createWorkspaceRecord(name: string) {
+  const state = readWorkspaces();
+  const folder: WorkspaceFolder = { id: `workspace-${Date.now()}`, name, createdAt: Date.now() };
+  writeWorkspaces({ ...state, folders: [...state.folders, folder] });
+  return folder.id;
+}
+function renameWorkspaceRecord(id: string, name: string) {
+  const state = readWorkspaces();
+  writeWorkspaces({ ...state, folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) });
+}
+function deleteWorkspaceRecord(id: string) {
+  const state = readWorkspaces();
+  const membership = Object.fromEntries(
+    Object.entries(state.membership).filter(([, folderId]) => folderId !== id),
+  );
+  writeWorkspaces({ folders: state.folders.filter((folder) => folder.id !== id), membership });
+}
+function moveProjectsToWorkspace(projectIds: string[], folderId: string | null) {
+  if (!projectIds.length) return;
+  const state = readWorkspaces();
+  const membership = { ...state.membership };
+  for (const projectId of projectIds) {
+    if (folderId) membership[projectId] = folderId;
+    else delete membership[projectId];
+  }
+  writeWorkspaces({ ...state, membership });
 }
 function navigate(path: string) {
   window.history.pushState({}, "", path);
@@ -1494,7 +1563,7 @@ function relativeUpdatedLabel(timestamp: number) {
   const years = Math.floor(days / 365);
   return `${years} ${years === 1 ? "year" : "years"} ago`;
 }
-type ProjectDialog = { type: "rename"; project: ProjectSummary } | { type: "delete"; projects: ProjectSummary[] };
+type ProjectDialog = { type: "rename"; project: ProjectSummary } | { type: "delete"; projects: ProjectSummary[] } | { type: "workspace-create" } | { type: "workspace-rename"; folder: WorkspaceFolder } | { type: "workspace-delete"; folder: WorkspaceFolder };
 function BrandMark({ onClick }: { onClick?: () => void }) {
   const content = <><span>AB</span><div><strong>archboard</strong><small>systems, clearly</small></div></>;
   return onClick
@@ -1506,11 +1575,26 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
   const [draftName, setDraftName] = useState("");
   const [importNotice, setImportNotice] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>(readWorkspaces);
+  const [openWorkspaceId, setOpenWorkspaceId] = useState("");
+  const [homeMenu, setHomeMenu] = useState<{ x: number; y: number; projectId?: string; workspaceId?: string } | null>(null);
+  const [moveDialog, setMoveDialog] = useState<{ projectIds: string[] } | null>(null);
+  const [moveTarget, setMoveTarget] = useState("");
+  const [moveNewName, setMoveNewName] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
   const projectsSize = useMemo(() => formatStorageSize(new Blob([JSON.stringify(projects)]).size), [projects]);
   const selectedProjects = useMemo(() => projects.filter((project) => selectedIds.has(project.id)), [projects, selectedIds]);
   const allSelected = projects.length > 0 && selectedProjects.length === projects.length;
+  const folderById = useMemo(() => new Map(workspaceState.folders.map((folder) => [folder.id, folder])), [workspaceState]);
+  const rootProjects = sortedProjects.filter((project) => !folderById.has(workspaceState.membership[project.id]));
+  const projectsInFolder = (folderId: string) => sortedProjects.filter((project) => workspaceState.membership[project.id] === folderId);
+  const menuProject = homeMenu?.projectId ? projects.find((project) => project.id === homeMenu.projectId) ?? null : null;
+  const menuWorkspace = homeMenu?.workspaceId ? folderById.get(homeMenu.workspaceId) ?? null : null;
+  const openWorkspace = openWorkspaceId ? folderById.get(openWorkspaceId) ?? null : null;
+  const openWorkspaceProjects = openWorkspace ? projectsInFolder(openWorkspace.id) : [];
+  const selectedInOpenWorkspace = openWorkspaceProjects.filter((project) => selectedIds.has(project.id));
+  const syncWorkspaces = () => setWorkspaceState(readWorkspaces());
   const toggleProjectSelection = (id: string) => {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -1524,12 +1608,38 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
   const deleteSelectedProjects = () => {
     if (selectedProjects.length) setDialog({ type: "delete", projects: selectedProjects });
   };
+  const openMoveDialog = (projectIds: string[]) => {
+    if (!projectIds.length) return;
+    const current = projectIds.map((id) => workspaceState.membership[id]).filter((id): id is string => !!id);
+    const shared = current.length === projectIds.length && new Set(current).size === 1 ? current[0] : "";
+    setMoveTarget(shared);
+    setMoveNewName("");
+    setMoveDialog({ projectIds });
+    setHomeMenu(null);
+  };
+  const submitMove = () => {
+    if (!moveDialog) return;
+    let folderId: string | null = moveTarget === "__new__" ? null : moveTarget || null;
+    if (moveTarget === "__new__") {
+      const name = moveNewName.trim();
+      if (!name) return;
+      folderId = createWorkspaceRecord(name);
+    }
+    moveProjectsToWorkspace(moveDialog.projectIds, folderId);
+    syncWorkspaces();
+    setMoveDialog(null);
+  };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (dialog) return;
+      if (dialog || moveDialog) return;
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
       if (event.key === "Escape") {
+        if (openWorkspaceId) {
+          setOpenWorkspaceId("");
+          return;
+        }
+        setHomeMenu(null);
         clearSelection();
         return;
       }
@@ -1540,7 +1650,24 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dialog, selectedProjects]);
+  }, [dialog, moveDialog, openWorkspaceId, selectedProjects]);
+  useEffect(() => {
+    if (!homeMenu) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest(".home-context-menu")) return;
+      setHomeMenu(null);
+    };
+    const onScroll = () => setHomeMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setHomeMenu(null); };
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [homeMenu]);
   const createProject = () => {
     const id = createProjectRecord();
     refresh();
@@ -1550,6 +1677,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
   const duplicateProject = (project: ProjectSummary) => {
     duplicateProjectRecord(project.id);
     refresh();
+    syncWorkspaces();
   };
   const deleteProject = (project: ProjectSummary) => setDialog({ type: "delete", projects: [project] });
   const importProjects = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1581,19 +1709,53 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
       const name = draftName.trim();
       if (!name) return;
       renameProjectRecord(dialog.project.id, name);
-    } else {
+    } else if (dialog.type === "delete") {
       const deletedIds = new Set(dialog.projects.map((project) => project.id));
       deleteProjectRecords([...deletedIds]);
       setSelectedIds((current) => new Set([...current].filter((id) => !deletedIds.has(id))));
+      syncWorkspaces();
+    } else if (dialog.type === "workspace-create") {
+      const name = draftName.trim();
+      if (!name) return;
+      createWorkspaceRecord(name);
+      syncWorkspaces();
+    } else if (dialog.type === "workspace-rename") {
+      const name = draftName.trim();
+      if (!name) return;
+      renameWorkspaceRecord(dialog.folder.id, name);
+      syncWorkspaces();
+    } else {
+      deleteWorkspaceRecord(dialog.folder.id);
+      if (openWorkspaceId === dialog.folder.id) setOpenWorkspaceId("");
+      syncWorkspaces();
     }
     refresh();
     closeDialog();
   };
-  return <main className="project-home">
+  const dialogEyebrow = dialog?.type === "rename" ? "Project name" : dialog?.type === "delete" ? "Delete project" : dialog?.type === "workspace-create" ? "New workspace" : dialog?.type === "workspace-rename" ? "Workspace name" : dialog?.type === "workspace-delete" ? "Delete workspace" : "";
+  const dialogHeading = !dialog ? "" : dialog.type === "rename" ? "Rename project" : dialog.type === "delete" ? (dialog.projects.length === 1 ? `Delete “${dialog.projects[0].name}”?` : `Delete ${dialog.projects.length} projects?`) : dialog.type === "workspace-create" ? "New workspace" : dialog.type === "workspace-rename" ? "Rename workspace" : `Delete “${dialog.folder.name}”?`;
+  const dialogHasInput = dialog?.type === "rename" || dialog?.type === "workspace-create" || dialog?.type === "workspace-rename";
+  const dialogConfirm = !dialog ? "" : dialog.type === "rename" ? "Save name" : dialog.type === "delete" ? (dialog.projects.length === 1 ? "Delete project" : `Delete ${dialog.projects.length} projects`) : dialog.type === "workspace-create" ? "Create workspace" : dialog.type === "workspace-rename" ? "Save name" : "Delete workspace";
+  const dialogDanger = dialog?.type === "delete" || dialog?.type === "workspace-delete";
+  const dialogBody = !dialog ? "" : dialog.type === "delete" ? (dialog.projects.length === 1 ? "This project and its local diagram data will be removed." : `These ${dialog.projects.length} projects and their local diagram data will be removed.`) : dialog.type === "workspace-delete" ? "Projects inside will move back to your home screen." : dialog.type === "workspace-create" ? "Group related projects into a simple folder. You can move projects in and out at any time." : "";
+  const renderProjectCard = (project: ProjectSummary) => {
+    const selected = selectedIds.has(project.id);
+    return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, projectId: project.id }); }}>
+      <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
+      <button className="project-preview" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
+      <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label={`Rename ${project.name}`} onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" aria-label={`Duplicate ${project.name}`} onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" aria-label={`Delete ${project.name}`} onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
+    </article>;
+  };
+  return <main className="project-home" onContextMenu={(event) => {
+    if (event.target instanceof Element && event.target.closest(".project-dialog-backdrop, .home-context-menu")) return;
+    event.preventDefault();
+    setHomeMenu({ x: event.clientX, y: event.clientY });
+  }}>
     <header className="home-header">
       <BrandMark />
       <div className="home-actions">
         <button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Import</button>
+        <button className="home-multi-import" onClick={() => { setDraftName(""); setDialog({ type: "workspace-create" }); }}><FolderPlus size={16} /> New workspace</button>
         <button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button>
         <input ref={importInput} hidden type="file" accept=".json,application/json" multiple onChange={(event) => void importProjects(event)} />
       </div>
@@ -1606,22 +1768,85 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
       {selectedProjects.length > 0 && <div className="project-selection-bar" role="status">
         <strong>{selectedProjects.length} selected</strong>
         <button onClick={allSelected ? clearSelection : selectAllProjects}>{allSelected ? "Clear selection" : "Select all"}</button>
+        <button onClick={() => openMoveDialog([...selectedIds])}><FolderInput size={14} /> Move</button>
         <button className="danger" onClick={deleteSelectedProjects}><Trash2 size={14} /> Delete</button>
         <button className="quiet" onClick={clearSelection}>Cancel</button>
       </div>}
+      {workspaceState.folders.length > 0 && <>
+        <div className="home-section-label">Workspaces</div>
+        <div className="workspace-grid">
+          {workspaceState.folders.map((folder) => {
+            const count = projectsInFolder(folder.id).length;
+            return <button className="workspace-tile" key={folder.id} onClick={() => setOpenWorkspaceId(folder.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, workspaceId: folder.id }); }} title={`Open ${folder.name}`}>
+              <span className="folder-glyph" aria-hidden="true" />
+              <span className="workspace-tile-text"><strong>{folder.name}</strong><small>{count} {count === 1 ? "project" : "projects"}</small></span>
+            </button>;
+          })}
+        </div>
+      </>}
       {projects.length === 0 && <div className="project-empty"><strong>No projects yet</strong><p>Create a new project or import a JSON diagram.</p></div>}
-      <div className="project-grid">
-        {sortedProjects.map((project) => {
-          const selected = selectedIds.has(project.id);
-          return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)}>
-            <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
-            <button className="project-preview" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
-            <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label={`Rename ${project.name}`} onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" aria-label={`Duplicate ${project.name}`} onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" aria-label={`Delete ${project.name}`} onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
-          </article>;
-        })}
-      </div>
+      {rootProjects.length > 0 && <div className="project-grid">
+        {rootProjects.map(renderProjectCard)}
+      </div>}
+      {projects.length > 0 && rootProjects.length === 0 && workspaceState.folders.length > 0 && <p className="workspace-note">No projects outside workspaces.</p>}
     </section>
-    {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialog.type === "rename" ? "Project name" : "Delete project"}</span><h2>{dialog.type === "rename" ? "Rename project" : dialog.projects.length === 1 ? `Delete “${dialog.projects[0].name}”?` : `Delete ${dialog.projects.length} projects?`}</h2>{dialog.type === "rename" ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>{dialog.projects.length === 1 ? "This project and its local diagram data will be removed." : `These ${dialog.projects.length} projects and their local diagram data will be removed.`}</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialog.type === "delete" ? "danger" : "primary"} onClick={submitDialog}>{dialog.type === "rename" ? "Save name" : dialog.projects.length === 1 ? "Delete project" : `Delete ${dialog.projects.length} projects`}</button></div></div></div>}
+    {openWorkspace && <div className="project-dialog-backdrop workspace-popup-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setOpenWorkspaceId("")}>
+      <div className="workspace-popup" role="dialog" aria-modal="true" aria-label={openWorkspace.name}>
+        <header className="workspace-popup-header">
+          <span className="folder-glyph folder-glyph-small" aria-hidden="true" />
+          <div className="workspace-popup-title"><strong>{openWorkspace.name}</strong><small>{openWorkspaceProjects.length} {openWorkspaceProjects.length === 1 ? "project" : "projects"}</small></div>
+          <div className="workspace-popup-actions">
+            <button title="Rename workspace" aria-label={`Rename ${openWorkspace.name}`} onClick={() => { setDraftName(openWorkspace.name); setDialog({ type: "workspace-rename", folder: openWorkspace }); }}><Pencil size={15} /></button>
+            <button title="Delete workspace" aria-label={`Delete ${openWorkspace.name}`} onClick={() => setDialog({ type: "workspace-delete", folder: openWorkspace })}><Trash2 size={15} /></button>
+            <button className="workspace-popup-close" title="Close workspace" aria-label="Close workspace" onClick={() => setOpenWorkspaceId("")}><X size={16} /></button>
+          </div>
+        </header>
+        {selectedInOpenWorkspace.length > 0 && <div className="project-selection-bar" role="status">
+          <strong>{selectedInOpenWorkspace.length} selected</strong>
+          <button onClick={() => openMoveDialog(selectedInOpenWorkspace.map((project) => project.id))}><FolderInput size={14} /> Move</button>
+          <button className="danger" onClick={() => setDialog({ type: "delete", projects: selectedInOpenWorkspace })}><Trash2 size={14} /> Delete</button>
+          <button className="quiet" onClick={clearSelection}>Cancel</button>
+        </div>}
+        <div className="workspace-popup-body">
+          {openWorkspaceProjects.length > 0
+            ? <div className="project-grid">{openWorkspaceProjects.map(renderProjectCard)}</div>
+            : <div className="workspace-empty">This workspace is empty. Select projects on the home screen and use Move to add them.</div>}
+        </div>
+      </div>
+    </div>}
+    {homeMenu && <div className="shape-context-menu home-context-menu" style={{ left: homeMenu.x, top: homeMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
+      {homeMenu.projectId ? (menuProject && (() => {
+        const folder = folderById.get(workspaceState.membership[menuProject.id]);
+        return <>
+          <button onClick={() => { navigate(`/project/${menuProject.id}`); setHomeMenu(null); }}><FolderOpen size={14} /> Open</button>
+          <button onClick={() => { renameProject(menuProject); setHomeMenu(null); }}><Pencil size={14} /> Rename</button>
+          <button onClick={() => { duplicateProject(menuProject); setHomeMenu(null); }}><Copy size={14} /> Duplicate</button>
+          <button onClick={() => openMoveDialog([menuProject.id])}><FolderInput size={14} /> Move to workspace…</button>
+          {folder && <button onClick={() => { moveProjectsToWorkspace([menuProject.id], null); syncWorkspaces(); setHomeMenu(null); }}><FolderMinus size={14} /> Remove from “{folder.name}”</button>}
+          <button className="danger" onClick={() => { deleteProject(menuProject); setHomeMenu(null); }}><Trash2 size={14} /> Delete</button>
+        </>;
+      })()) : menuWorkspace ? <>
+        <button onClick={() => { setOpenWorkspaceId(menuWorkspace.id); setHomeMenu(null); }}><FolderOpen size={14} /> Open workspace</button>
+        <button onClick={() => { setDraftName(menuWorkspace.name); setDialog({ type: "workspace-rename", folder: menuWorkspace }); setHomeMenu(null); }}><Pencil size={14} /> Rename workspace</button>
+        <button className="danger" onClick={() => { setDialog({ type: "workspace-delete", folder: menuWorkspace }); setHomeMenu(null); }}><Trash2 size={14} /> Delete workspace</button>
+      </> : <>
+        <button onClick={() => { createProject(); setHomeMenu(null); }}><Plus size={14} /> New project</button>
+        <button onClick={() => { setDraftName(""); setDialog({ type: "workspace-create" }); setHomeMenu(null); }}><FolderPlus size={14} /> New workspace</button>
+        <button onClick={() => { importInput.current?.click(); setHomeMenu(null); }}><Upload size={14} /> Import JSON</button>
+      </>}
+    </div>}
+    {moveDialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setMoveDialog(null)}><div className="project-dialog" role="dialog" aria-modal="true">
+      <span className="eyebrow">Workspace</span>
+      <h2>{moveDialog.projectIds.length === 1 ? `Move “${projects.find((project) => project.id === moveDialog.projectIds[0])?.name ?? "project"}”` : `Move ${moveDialog.projectIds.length} projects`}</h2>
+      <div className="move-dialog-list">
+        <label className={`move-option ${moveTarget === "" ? "selected" : ""}`}><input type="radio" name="move-target" checked={moveTarget === ""} onChange={() => setMoveTarget("")} /><span>No workspace (root)</span></label>
+        {workspaceState.folders.map((folder) => <label key={folder.id} className={`move-option ${moveTarget === folder.id ? "selected" : ""}`}><input type="radio" name="move-target" checked={moveTarget === folder.id} onChange={() => setMoveTarget(folder.id)} /><Folder size={14} /><span>{folder.name}</span></label>)}
+        <label className={`move-option ${moveTarget === "__new__" ? "selected" : ""}`}><input type="radio" name="move-target" checked={moveTarget === "__new__"} onChange={() => setMoveTarget("__new__")} /><FolderPlus size={14} /><span>New workspace…</span></label>
+        {moveTarget === "__new__" && <input className="move-new-input" autoFocus placeholder="Workspace name" value={moveNewName} onChange={(event) => setMoveNewName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitMove()} />}
+      </div>
+      <div className="project-dialog-actions"><button onClick={() => setMoveDialog(null)}>Cancel</button><button className="primary" disabled={moveTarget === "__new__" && !moveNewName.trim()} onClick={submitMove}>Move</button></div>
+    </div></div>}
+    {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialogEyebrow}</span><h2>{dialogHeading}</h2>{dialogHasInput ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>{dialogBody}</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialogDanger ? "danger" : "primary"} onClick={submitDialog}>{dialogConfirm}</button></div></div></div>}
   </main>;
 }
 function Editor({ project }: { project: Project }) {
