@@ -1581,6 +1581,10 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
   const [moveDialog, setMoveDialog] = useState<{ projectIds: string[] } | null>(null);
   const [moveTarget, setMoveTarget] = useState("");
   const [moveNewName, setMoveNewName] = useState("");
+  const [draggingIds, setDraggingIds] = useState<string[]>([]);
+  const [dragOverWorkspace, setDragOverWorkspace] = useState("");
+  const [dragOverRoot, setDragOverRoot] = useState(false);
+  const [dragOverOut, setDragOverOut] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
   const projectsSize = useMemo(() => formatStorageSize(new Blob([JSON.stringify(projects)]).size), [projects]);
@@ -1595,6 +1599,36 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
   const openWorkspaceProjects = openWorkspace ? projectsInFolder(openWorkspace.id) : [];
   const selectedInOpenWorkspace = openWorkspaceProjects.filter((project) => selectedIds.has(project.id));
   const syncWorkspaces = () => setWorkspaceState(readWorkspaces());
+  const draggedProjectIds = (event: React.DragEvent) => {
+    try {
+      const parsed = JSON.parse(event.dataTransfer.getData("application/archboard-projects") || "null");
+      if (Array.isArray(parsed)) return parsed.filter((id): id is string => typeof id === "string");
+    } catch { /* Fall back to the in-memory drag state. */ }
+    return draggingIds;
+  };
+  const startProjectDrag = (event: React.DragEvent, project: ProjectSummary) => {
+    const ids = selectedIds.has(project.id) ? [...selectedIds] : [project.id];
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/archboard-projects", JSON.stringify(ids));
+    event.dataTransfer.setData("text/plain", ids.join(","));
+    setDraggingIds(ids);
+  };
+  const finishProjectDrag = () => {
+    setDraggingIds([]);
+    setDragOverWorkspace("");
+    setDragOverRoot(false);
+    setDragOverOut(false);
+  };
+  const dropProjects = (event: React.DragEvent, folderId: string | null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const ids = draggedProjectIds(event);
+    if (ids.length) {
+      moveProjectsToWorkspace(ids, folderId);
+      syncWorkspaces();
+    }
+    finishProjectDrag();
+  };
   const toggleProjectSelection = (id: string) => {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -1740,7 +1774,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
   const dialogBody = !dialog ? "" : dialog.type === "delete" ? (dialog.projects.length === 1 ? "This project and its local diagram data will be removed." : `These ${dialog.projects.length} projects and their local diagram data will be removed.`) : dialog.type === "workspace-delete" ? "Projects inside will move back to your home screen." : dialog.type === "workspace-create" ? "Group related projects into a simple folder. You can move projects in and out at any time." : "";
   const renderProjectCard = (project: ProjectSummary) => {
     const selected = selectedIds.has(project.id);
-    return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} onDoubleClick={() => navigate(`/project/${project.id}`)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, projectId: project.id }); }}>
+    return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} draggable onDragStart={(event) => startProjectDrag(event, project)} onDragEnd={finishProjectDrag} onDoubleClick={() => navigate(`/project/${project.id}`)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, projectId: project.id }); }}>
       <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
       <button className="project-preview" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
       <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label={`Rename ${project.name}`} onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" aria-label={`Duplicate ${project.name}`} onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" aria-label={`Delete ${project.name}`} onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
@@ -1777,20 +1811,21 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
         <div className="workspace-grid">
           {workspaceState.folders.map((folder) => {
             const count = projectsInFolder(folder.id).length;
-            return <button className="workspace-tile" key={folder.id} onClick={() => setOpenWorkspaceId(folder.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, workspaceId: folder.id }); }} title={`Open ${folder.name}`}>
+            return <button className={`workspace-tile ${draggingIds.length ? "drop-ready" : ""} ${dragOverWorkspace === folder.id ? "drag-over" : ""}`} key={folder.id} onClick={() => setOpenWorkspaceId(folder.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, workspaceId: folder.id }); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverWorkspace(folder.id); }} onDragLeave={() => setDragOverWorkspace((current) => current === folder.id ? "" : current)} onDrop={(event) => dropProjects(event, folder.id)} title={`Open ${folder.name}`}>
               <span className="folder-glyph" aria-hidden="true" />
               <span className="workspace-tile-text"><strong>{folder.name}</strong><small>{count} {count === 1 ? "project" : "projects"}</small></span>
             </button>;
           })}
         </div>
       </>}
+      {draggingIds.length > 0 && draggingIds.some((id) => workspaceState.membership[id]) && <div className={`workspace-drop-zone ${dragOverRoot ? "over" : ""}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverRoot(true); }} onDragLeave={() => setDragOverRoot(false)} onDrop={(event) => dropProjects(event, null)}>Drop here to move {draggingIds.length === 1 ? "this project" : `${draggingIds.length} projects`} out of the workspace</div>}
       {projects.length === 0 && <div className="project-empty"><strong>No projects yet</strong><p>Create a new project or import a JSON diagram.</p></div>}
       {rootProjects.length > 0 && <div className="project-grid">
         {rootProjects.map(renderProjectCard)}
       </div>}
       {projects.length > 0 && rootProjects.length === 0 && workspaceState.folders.length > 0 && <p className="workspace-note">No projects outside workspaces.</p>}
     </section>
-    {openWorkspace && <div className="project-dialog-backdrop workspace-popup-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setOpenWorkspaceId("")}>
+    {openWorkspace && <div className="project-dialog-backdrop workspace-popup-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setOpenWorkspaceId("")} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropProjects(event, null)}>
       <div className="workspace-popup" role="dialog" aria-modal="true" aria-label={openWorkspace.name}>
         <header className="workspace-popup-header">
           <span className="folder-glyph folder-glyph-small" aria-hidden="true" />
@@ -1808,6 +1843,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
           <button className="quiet" onClick={clearSelection}>Cancel</button>
         </div>}
         <div className="workspace-popup-body">
+          {draggingIds.length > 0 && <div className={`workspace-drop-zone ${dragOverOut ? "over" : ""}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverOut(true); }} onDragLeave={() => setDragOverOut(false)} onDrop={(event) => dropProjects(event, null)}>Drop here to move out of this workspace</div>}
           {openWorkspaceProjects.length > 0
             ? <div className="project-grid">{openWorkspaceProjects.map(renderProjectCard)}</div>
             : <div className="workspace-empty">This workspace is empty. Select projects on the home screen and use Move to add them.</div>}
