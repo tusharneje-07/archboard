@@ -2104,7 +2104,16 @@ function Editor({ project }: { project: Project }) {
     const range = { startLineNumber: objectStart.lineNumber, startColumn: objectStart.column, endLineNumber: objectEnd.lineNumber, endColumn: objectEnd.column };
     requestAnimationFrame(() => { editor.focus(); editor.revealRangeInCenter(range); editor.setSelection(range); codeDecorationRef.current = editor.deltaDecorations(codeDecorationRef.current, [{ range, options: { className: "code-node-highlight", isWholeLine: false, overviewRuler: { color: "#1c8da5", position: 4 } } }]); });
   }, [leftTab, codeDraft, codeHighlightId, codeEditorReady]);
-  const startPanelResize = (side: "left" | "right", event: React.PointerEvent) => { const start = event.clientX, width = side === "left" ? leftWidth : rightWidth; const move = (current: PointerEvent) => { const next = Math.max(190, Math.min(420, width + (side === "left" ? current.clientX - start : start - current.clientX))); side === "left" ? setLeftWidth(next) : setRightWidth(next); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); };
+  const startPanelResize = (side: "left" | "right", event: React.PointerEvent) => {
+    event.preventDefault();
+    const start = event.clientX, width = side === "left" ? leftWidth : rightWidth;
+    document.body.classList.add("panel-resizing");
+    const move = (current: PointerEvent) => { const next = Math.max(190, Math.min(420, width + (side === "left" ? current.clientX - start : start - current.clientX))); side === "left" ? setLeftWidth(next) : setRightWidth(next); };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); document.body.classList.remove("panel-resizing"); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
   useEffect(() => {
     const onDragStart = (event: DragEvent) => {
       const item = (event.target as HTMLElement).closest(".shape-item");
