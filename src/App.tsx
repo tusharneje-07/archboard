@@ -451,7 +451,7 @@ const initialNodes: Node<NodeData>[] = [
   {
     id: "client",
     type: "shape",
-    position: { x: 60, y: 220 },
+    position: { x: 208, y: -16 },
     style: { width: 200, height: 96 },
     zIndex: 2,
     data: {
@@ -468,7 +468,7 @@ const initialNodes: Node<NodeData>[] = [
   {
     id: "server",
     type: "shape",
-    position: { x: 430, y: 220 },
+    position: { x: 288, y: 224 },
     style: { width: 210, height: 96 },
     zIndex: 2,
     data: {
@@ -485,7 +485,7 @@ const initialNodes: Node<NodeData>[] = [
   {
     id: "database",
     type: "shape",
-    position: { x: 820, y: 218 },
+    position: { x: 416, y: 464 },
     style: { width: 200, height: 100 },
     zIndex: 2,
     data: {
@@ -501,36 +501,14 @@ const initialNodes: Node<NodeData>[] = [
 ];
 const initialEdges: Edge<EdgeData>[] = [
   {
-    id: "client-server-exchange",
-    source: "client",
-    target: "server",
-    type: "smart",
-    sourceHandle: "right",
-    targetHandle: "left-target",
-    data: {
-      route: "straight",
-      arrow: "double",
-      stroke: "#27576B",
-      width: 2,
-      dashed: false,
-      dash: 6,
-      gap: 5,
-      label: "HTTP Request / Response",
-      labelDirection: "horizontal",
-      labelHtml: false,
-    },
-    markerStart: { type: MarkerType.ArrowClosed, color: "#27576B" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#27576B" },
-  },
-  {
     id: "server-database-exchange",
+    type: "smart",
     source: "server",
     target: "database",
-    type: "smart",
-    sourceHandle: "right",
-    targetHandle: "left-target",
+    sourceHandle: "bottom",
+    targetHandle: "top-target",
     data: {
-      route: "straight",
+      route: "free",
       arrow: "double",
       stroke: "#8C6634",
       width: 2,
@@ -540,9 +518,31 @@ const initialEdges: Edge<EdgeData>[] = [
       label: "Read / Write",
       labelDirection: "horizontal",
       labelHtml: false,
+      labelFontSize: 14,
     },
-    markerStart: { type: MarkerType.ArrowClosed, color: "#8C6634" },
     markerEnd: { type: MarkerType.ArrowClosed, color: "#8C6634" },
+  },
+  {
+    id: "client-server-exchange",
+    type: "smart",
+    source: "client",
+    target: "server",
+    sourceHandle: "bottom",
+    targetHandle: "top-target",
+    data: {
+      route: "free",
+      arrow: "double",
+      stroke: "#27576B",
+      width: 2,
+      dashed: false,
+      dash: 6,
+      gap: 5,
+      label: "HTTP Request / Response",
+      labelDirection: "horizontal",
+      labelHtml: false,
+      labelFontSize: 14,
+    },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#27576B" },
   },
 ];
 
@@ -761,25 +761,36 @@ function decompressProject(summary: ProjectSummary): Project | null {
   }
 }
 const seedVersionKey = "archboard-seed-version";
-const seedVersion = "2";
+const seedVersion = "3";
 const sampleProjectName = "Client-Server Architecture";
 const legacySeedName = "Untitled architecture";
 const legacySeedLabels = ["Client / Browser", "Web Application", "API Gateway", "PostgreSQL"];
-const isLegacySeedProject = (project: Project) =>
-  project.name === legacySeedName &&
-  project.nodes.map((node) => node.data.label).join("|") === legacySeedLabels.join("|");
-/** Swaps the untouched starter diagram from earlier releases for the current sample, so existing installs see it too. */
+const previousSamplePositions: Record<string, { x: number; y: number }> = {
+  client: { x: 60, y: 220 },
+  server: { x: 430, y: 220 },
+  database: { x: 820, y: 218 },
+};
+/** True for starter diagrams from earlier releases that the user never rearranged. */
+function isUneditedStarter(project: Project): boolean {
+  if (project.name === legacySeedName) return project.nodes.map((node) => node.data.label).join("|") === legacySeedLabels.join("|");
+  if (project.name !== sampleProjectName || project.nodes.length !== 3) return false;
+  return project.nodes.every((node) => {
+    const previous = previousSamplePositions[node.id];
+    return !!previous && node.position.x === previous.x && node.position.y === previous.y;
+  });
+}
+/** Swaps untouched starter diagrams from earlier releases for the current sample, so existing installs see it too. */
 function migrateLegacySeedProject() {
   if (localStorage.getItem(seedVersionKey) === seedVersion) return;
   const active = readActiveProject();
-  if (active && isLegacySeedProject(active.project)) {
+  if (active && isUneditedStarter(active.project)) {
     writeActiveProject({ ...active.project, name: sampleProjectName, nodes: initialNodes, edges: initialEdges, updatedAt: Date.now() });
   }
   let changed = false;
   const summaries = readProjectSummaries(false).map((summary) => {
-    if (summary.name !== legacySeedName) return summary;
+    if (summary.name !== legacySeedName && summary.name !== sampleProjectName) return summary;
     const project = decompressProject(summary);
-    if (!project || !isLegacySeedProject(project)) return summary;
+    if (!project || !isUneditedStarter(project)) return summary;
     changed = true;
     return compressProject({ ...project, name: sampleProjectName, nodes: initialNodes, edges: initialEdges, updatedAt: Date.now() });
   });
