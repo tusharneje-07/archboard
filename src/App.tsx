@@ -451,71 +451,98 @@ const initialNodes: Node<NodeData>[] = [
   {
     id: "client",
     type: "shape",
-    position: { x: 100, y: 180 },
-    style: { width: 170, height: 76 },
-    data: baseData("rounded", "Client / Browser"),
-  },
-  {
-    id: "api",
-    type: "shape",
-    position: { x: 390, y: 150 },
-    style: { width: 210, height: 140 },
-    data: baseData("container", "Web Application"),
-  },
-  {
-    id: "service",
-    type: "shape",
-    parentId: "api",
-    position: { x: 22, y: 48 },
-    style: { width: 166, height: 62 },
+    position: { x: 60, y: 220 },
+    style: { width: 200, height: 96 },
+    zIndex: 2,
     data: {
-      ...baseData("rectangle", "API Gateway"),
-      fill: "#00546D",
-      border: "#003A4C",
-      textColor: "#FFFFFF",
+      ...baseData("rounded", "CLIENT\nWeb browser / mobile app"),
+      fill: "#DDF4FF",
+      border: "#5B9DBB",
+      textColor: "#173746",
+      borderWidth: 1.5,
+      radius: 12,
+      width: 200,
+      height: 96,
     },
   },
   {
-    id: "db",
+    id: "server",
     type: "shape",
-    position: { x: 720, y: 180 },
-    style: { width: 170, height: 76 },
-    data: baseData("ellipse", "PostgreSQL"),
+    position: { x: 430, y: 220 },
+    style: { width: 210, height: 96 },
+    zIndex: 2,
+    data: {
+      ...baseData("rounded", "APPLICATION SERVER\nProcesses requests"),
+      fill: "#E5F4E8",
+      border: "#63966D",
+      textColor: "#23452A",
+      borderWidth: 1.5,
+      radius: 12,
+      width: 210,
+      height: 96,
+    },
+  },
+  {
+    id: "database",
+    type: "shape",
+    position: { x: 820, y: 218 },
+    style: { width: 200, height: 100 },
+    zIndex: 2,
+    data: {
+      ...baseData("ellipse", "DATABASE\nStores data"),
+      fill: "#FFF0D9",
+      border: "#C28A3E",
+      textColor: "#66451C",
+      borderWidth: 1.5,
+      width: 200,
+      height: 100,
+    },
   },
 ];
 const initialEdges: Edge<EdgeData>[] = [
   {
-    id: "client-api",
+    id: "client-server-exchange",
     source: "client",
-    target: "api",
+    target: "server",
     type: "smart",
-    data: {
-      route: "orthogonal",
-      arrow: "single",
-      stroke: "#27576B",
-      width: 1.5,
-      dashed: false,
-      dash: 6,
-      gap: 5,
-    },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#27576B" },
-  },
-  {
-    id: "api-db",
-    source: "api",
-    target: "db",
-    type: "smart",
+    sourceHandle: "right",
+    targetHandle: "left-target",
     data: {
       route: "straight",
       arrow: "double",
       stroke: "#27576B",
-      width: 1.5,
-      dashed: true,
-      dash: 5,
-      gap: 4,
+      width: 2,
+      dashed: false,
+      dash: 6,
+      gap: 5,
+      label: "HTTP Request / Response",
+      labelDirection: "horizontal",
+      labelHtml: false,
     },
     markerStart: { type: MarkerType.ArrowClosed, color: "#27576B" },
     markerEnd: { type: MarkerType.ArrowClosed, color: "#27576B" },
+  },
+  {
+    id: "server-database-exchange",
+    source: "server",
+    target: "database",
+    type: "smart",
+    sourceHandle: "right",
+    targetHandle: "left-target",
+    data: {
+      route: "straight",
+      arrow: "double",
+      stroke: "#8C6634",
+      width: 2,
+      dashed: false,
+      dash: 6,
+      gap: 5,
+      label: "Read / Write",
+      labelDirection: "horizontal",
+      labelHtml: false,
+    },
+    markerStart: { type: MarkerType.ArrowClosed, color: "#8C6634" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#8C6634" },
   },
 ];
 
@@ -697,7 +724,7 @@ function readProjectSummaries(createDefault = true): ProjectSummary[] {
   }
   if (!createDefault && !localStorage.getItem(legacyDiagramKey)) return [];
   const diagram = loadSavedDiagram(), now = Date.now();
-  const project: Project = { id: `project-${now}`, name: "Untitled architecture", ...diagram, createdAt: now, updatedAt: now };
+  const project: Project = { id: `project-${now}`, name: sampleProjectName, ...diagram, createdAt: now, updatedAt: now };
   const summaries = [compressProject(project)];
   writeProjectSummaries(summaries);
   localStorage.removeItem(legacyDiagramKey);
@@ -732,6 +759,32 @@ function decompressProject(summary: ProjectSummary): Project | null {
   } catch {
     return null;
   }
+}
+const seedVersionKey = "archboard-seed-version";
+const seedVersion = "2";
+const sampleProjectName = "Client-Server Architecture";
+const legacySeedName = "Untitled architecture";
+const legacySeedLabels = ["Client / Browser", "Web Application", "API Gateway", "PostgreSQL"];
+const isLegacySeedProject = (project: Project) =>
+  project.name === legacySeedName &&
+  project.nodes.map((node) => node.data.label).join("|") === legacySeedLabels.join("|");
+/** Swaps the untouched starter diagram from earlier releases for the current sample, so existing installs see it too. */
+function migrateLegacySeedProject() {
+  if (localStorage.getItem(seedVersionKey) === seedVersion) return;
+  const active = readActiveProject();
+  if (active && isLegacySeedProject(active.project)) {
+    writeActiveProject({ ...active.project, name: sampleProjectName, nodes: initialNodes, edges: initialEdges, updatedAt: Date.now() });
+  }
+  let changed = false;
+  const summaries = readProjectSummaries(false).map((summary) => {
+    if (summary.name !== legacySeedName) return summary;
+    const project = decompressProject(summary);
+    if (!project || !isLegacySeedProject(project)) return summary;
+    changed = true;
+    return compressProject({ ...project, name: sampleProjectName, nodes: initialNodes, edges: initialEdges, updatedAt: Date.now() });
+  });
+  if (changed) writeProjectSummaries(summaries);
+  localStorage.setItem(seedVersionKey, seedVersion);
 }
 function readProject(id: string): Project | null {
   const active = readActiveProject();
@@ -1270,7 +1323,10 @@ function inferIconCategory(identifier: string): IconCategory {
 function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [hash, setHash] = useState(window.location.hash);
-  const [projects, setProjects] = useState<ProjectSummary[]>(readProjectSummaries);
+  const [projects, setProjects] = useState<ProjectSummary[]>(() => {
+    migrateLegacySeedProject();
+    return readProjectSummaries();
+  });
   const [loadedProject, setLoadedProject] = useState<Project | null>(null);
   useEffect(() => {
     const onPopState = () => { setPath(window.location.pathname); setHash(window.location.hash); setProjects(readProjectSummaries()); };
