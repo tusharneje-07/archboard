@@ -802,6 +802,14 @@ h2 {
   white-space: pre-wrap;
   overflow-wrap: normal;
 }
+.edge-label-text {
+  display: inline-block;
+  width: max-content;
+  max-width: none;
+  line-height: 1.25;
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+}
 .edge-arrow { pointer-events: none; }
 .inspector-tabs {
   display: flex;

@@ -1242,7 +1242,7 @@ function SmartEdge({
                minHeight: "auto",
                whiteSpace: "pre-wrap",
                overflowWrap: "normal",
-               overflow: "visible",
+               overflow: "hidden",
                fontWeight: data?.labelFontWeight ?? 400,
                textAlign: data?.labelAlign ?? "center",
              }}
@@ -1256,7 +1256,7 @@ function SmartEdge({
                   ),
                 );
             }}
-          >{data.labelHtml ? <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(data.label) }} /> : data.label}</div>
+          ><span className="edge-label-text" style={{ display: "inline-block", width: "max-content", maxWidth: "none", lineHeight: 1.25 }}>{data.labelHtml ? <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(data.label) }} /> : data.label}</span></div>
         </EdgeLabelRenderer>
       )}
     </>
