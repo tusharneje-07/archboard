@@ -1237,6 +1237,12 @@ function SmartEdge({
                padding: `${data?.labelPadding ?? 3}px ${Math.max(4, (data?.labelPadding ?? 3) + 3)}px`,
                fontFamily: data?.labelFontFamily ?? "DM Mono",
                fontSize: data?.labelFontSize ?? 10,
+               lineHeight: 1.25,
+               height: "auto",
+               minHeight: "auto",
+               whiteSpace: "pre-wrap",
+               overflowWrap: "normal",
+               overflow: "visible",
                fontWeight: data?.labelFontWeight ?? 400,
                textAlign: data?.labelAlign ?? "center",
              }}

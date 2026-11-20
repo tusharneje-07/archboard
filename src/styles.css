@@ -785,10 +785,13 @@ h2 {
   position: absolute;
   z-index: 1001;
   display: inline-block;
-  width: fit-content;
   box-sizing: border-box;
+  width: max-content;
   max-width: none;
   line-height: 1.25;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
   pointer-events: all;
   background: #fff;
   border: 1px solid #c9d9dd;
