@@ -2418,7 +2418,30 @@ function Editor({ project }: { project: Project }) {
   const getExportBounds = () => {
     const items = nodes.map((node) => ({ position: absolutePosition(node), width: Number(node.style?.width ?? node.data.width ?? 170), height: Number(node.style?.height ?? node.data.height ?? 76) }));
     if (!items.length) return null;
-    return { minX: Math.min(...items.map((item) => item.position.x)), minY: Math.min(...items.map((item) => item.position.y)), maxX: Math.max(...items.map((item) => item.position.x + item.width)), maxY: Math.max(...items.map((item) => item.position.y + item.height)) };
+    let minX = Math.min(...items.map((item) => item.position.x));
+    let minY = Math.min(...items.map((item) => item.position.y));
+    let maxX = Math.max(...items.map((item) => item.position.x + item.width));
+    let maxY = Math.max(...items.map((item) => item.position.y + item.height));
+
+    const canvasElement = canvas.current;
+    if (canvasElement) {
+      const canvasRect = canvasElement.getBoundingClientRect();
+      const viewport = reactFlow.getViewport();
+      const zoom = viewport.zoom || 1;
+      canvasElement.querySelectorAll<HTMLElement>(".edge-label").forEach((label) => {
+        const rect = label.getBoundingClientRect();
+        const labelMinX = (rect.left - canvasRect.left - viewport.x) / zoom;
+        const labelMinY = (rect.top - canvasRect.top - viewport.y) / zoom;
+        const labelMaxX = (rect.right - canvasRect.left - viewport.x) / zoom;
+        const labelMaxY = (rect.bottom - canvasRect.top - viewport.y) / zoom;
+        minX = Math.min(minX, labelMinX);
+        minY = Math.min(minY, labelMinY);
+        maxX = Math.max(maxX, labelMaxX);
+        maxY = Math.max(maxY, labelMaxY);
+      });
+    }
+
+    return { minX, minY, maxX, maxY };
   };
   const frameAt = (position: { x: number; y: number }, width: number, height: number, ignoredId?: string) =>
     nodes.find((frame) => {

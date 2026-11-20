@@ -785,8 +785,10 @@ h2 {
   position: absolute;
   z-index: 1001;
   display: inline-block;
-  width: max-content;
-  max-width: 220px;
+  width: fit-content;
+  box-sizing: border-box;
+  max-width: none;
+  line-height: 1.25;
   pointer-events: all;
   background: #fff;
   border: 1px solid #c9d9dd;
@@ -795,7 +797,7 @@ h2 {
   font: 10px "DM Mono";
   text-align: center;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 .edge-arrow { pointer-events: none; }
 .inspector-tabs {
