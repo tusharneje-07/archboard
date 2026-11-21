@@ -277,14 +277,15 @@ button {
 .code-panel { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; height: auto; }
 .code-panel-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .code-panel-head > div:first-child { flex: 1 1 100%; min-width: 0; }
-.code-format-tabs { display: inline-flex; flex: 1 1 100%; gap: 4px; }
-.code-format-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: 1 1 0; min-height: 28px; padding: 5px 8px; color: #64777f; background: #f8fbfb; border: 1px solid #d2e0e2; border-radius: 3px; font-size: 10px; }
+.code-format-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 1 100%; width: 100%; gap: 6px; }
+.code-format-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 38px; padding: 7px 8px; color: #64777f; background: #f8fbfb; border: 1px solid #d2e0e2; border-radius: 5px; font-size: 11px; white-space: nowrap; }
 .code-format-tabs button.active { color: #fff; background: #00546d; border-color: #00546d; }
-.code-mermaid-hint { margin: 0; padding: 8px 9px; color: #64777f; background: #f7fbfb; border: 1px solid #d7e5e7; border-radius: 3px; font-size: 10px; line-height: 1.45; }
-.code-panel-actions { display: flex; flex: none; align-items: center; gap: 6px; margin-left: auto; }
-.code-panel-actions .quiet { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 26px; white-space: nowrap; }
+.code-mermaid-hint { margin: 0; padding: 10px 11px; color: #64777f; background: #f7fbfb; border: 1px solid #d7e5e7; border-radius: 4px; font-size: 11px; line-height: 1.45; }
+.code-panel-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex: 1 1 100%; width: 100%; align-items: center; gap: 6px; }
+.code-panel-actions:has(> button:nth-child(4)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.code-panel-actions .quiet { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 0; min-height: 34px; padding: 6px 4px; white-space: nowrap; }
 .code-panel-head .code-panel-actions { flex: 1 1 100%; margin-left: 0; }
-.code-panel-head .code-panel-actions .quiet { flex: 1 1 0; }
+.code-panel-head .code-panel-actions .quiet { flex: none; }
 .code-panel-head strong { display: block; margin-top: 4px; overflow: hidden; color: #244754; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .code-panel-head .quiet { padding: 4px 9px; color: #4e7d88; font: 10px "DM Mono"; border: 1px solid #d1e1e3; border-radius: 3px; }
 .diagram-code-editor { width: 100%; min-height: 0; flex: 1; resize: none; padding: 12px; color: #294957; background: #f7fbfb; border: 1px solid #c6dadd; border-radius: 4px; outline: none; font: 11px/1.55 "DM Mono", monospace; tab-size: 2; }
@@ -296,7 +297,10 @@ button {
 .code-apply:hover { background: #006c88; }
 .code-fullscreen-backdrop { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 24px; background: rgb(18 39 46 / 48%); }
 .code-fullscreen { display: flex; flex-direction: column; width: min(1180px, 100%); height: min(860px, 94vh); min-height: 0; overflow: hidden; background: #fff; border: 1px solid #d7e3e5; border-radius: 8px; box-shadow: 0 24px 80px rgb(15 48 58 / 28%); }
-.code-fullscreen-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #dce7e8; }
+.code-fullscreen-head { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(260px, 420px) auto; align-items: center; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #dce7e8; }
+.code-fullscreen-head .code-format-tabs { width: 100%; }
+.code-fullscreen-head .code-panel-actions { display: flex; width: auto; }
+.code-fullscreen-head .code-panel-actions .quiet { width: auto; min-width: 72px; }
 .code-fullscreen-head h2 { margin: 4px 0 0; font-size: 20px; }
 .code-fullscreen-head .code-panel-actions .quiet { padding: 7px 12px; color: #4e7d88; background: transparent; border: 1px solid #d2e0e2; border-radius: 3px; font-size: 11px; }
 .code-fullscreen-head .code-panel-actions .quiet:hover { color: #176b7d; background: #f5f9f9; border-color: #b9dce1; }
