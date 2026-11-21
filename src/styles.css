@@ -282,8 +282,9 @@ button {
 .code-format-tabs button.active { color: #fff; background: #00546d; border-color: #00546d; }
 .code-mermaid-hint { margin: 0; padding: 10px 11px; color: #64777f; background: #f7fbfb; border: 1px solid #d7e5e7; border-radius: 4px; font-size: 11px; line-height: 1.45; }
 .code-panel-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex: 1 1 100%; width: 100%; align-items: center; gap: 6px; }
-.code-panel-actions:has(> button:nth-child(4)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.code-panel-actions .quiet { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 0; min-height: 34px; padding: 6px 4px; white-space: nowrap; }
+.code-panel-actions:has(> button:nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.code-panel-actions .quiet { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 0; min-height: 38px; padding: 6px 4px; line-height: 1.15; text-align: center; white-space: normal; }
+.code-panel-actions .quiet span { min-width: 0; }
 .code-panel-head .code-panel-actions { flex: 1 1 100%; margin-left: 0; }
 .code-panel-head .code-panel-actions .quiet { flex: none; }
 .code-panel-head strong { display: block; margin-top: 4px; overflow: hidden; color: #244754; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
