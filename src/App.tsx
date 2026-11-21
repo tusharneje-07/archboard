@@ -1992,6 +1992,8 @@ function Editor({ project }: { project: Project }) {
     [importError, setImportError] = useState(""),
      [codeDraft, setCodeDraft] = useState(() => JSON.stringify({ nodes: project.nodes, edges: project.edges }, null, 2)),
      [codeError, setCodeError] = useState(""),
+      [codeFormat, setCodeFormat] = useState<"json" | "mermaid">("json"),
+      [codeCopied, setCodeCopied] = useState(false),
       [codeFullscreen, setCodeFullscreen] = useState(false),
      [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; nodeIds: string[] } | null>(null),
      [codeHighlightId, setCodeHighlightId] = useState(""),
@@ -2112,6 +2114,46 @@ function Editor({ project }: { project: Project }) {
     );
   }, [nodes, edges]);
   const diagramJson = () => JSON.stringify({ nodes, edges }, null, 2);
+  const mermaidDiagram = () => {
+    const safeMermaidId = (id: string, index: number) => {
+      const clean = id.replace(/[^A-Za-z0-9_]/g, "_");
+      return /^[_A-Za-z]/.test(clean) ? clean : `node_${index}_${clean || index}`;
+    };
+    const cleanMermaidText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/\{/g, "&#123;").replace(/\}/g, "&#125;").replace(/\[/g, "&#91;").replace(/\]/g, "&#93;").replace(/\n/g, "<br/>").trim();
+    const ids = new Map(nodes.map((node, index) => [node.id, safeMermaidId(node.id, index)]));
+    const lines = ["flowchart TB"];
+    nodes.forEach((node) => {
+      const id = ids.get(node.id)!;
+      const label = cleanMermaidText(node.data.label || node.id);
+      const kind = node.data.kind;
+      if (kind === "container") {
+        lines.push(`  subgraph ${id}["${label}"]`);
+        nodes.filter((child) => child.parentId === node.id).forEach((child) => {
+          const childId = ids.get(child.id)!;
+          const childLabel = cleanMermaidText(child.data.label || child.id);
+          if (child.data.kind === "ellipse") lines.push(`    ${childId}(["${childLabel}"])`);
+          else if (child.data.kind === "diamond") lines.push(`    ${childId}{"${childLabel}"}`);
+          else lines.push(`    ${childId}["${childLabel}"]`);
+        });
+        lines.push("  end");
+      } else if (!node.parentId) {
+        if (kind === "ellipse") lines.push(`  ${id}(["${label}"])`);
+        else if (kind === "diamond") lines.push(`  ${id}{"${label}"}`);
+        else lines.push(`  ${id}["${label}"]`);
+      }
+    });
+
+    edges.forEach((edge) => {
+      const source = ids.get(edge.source);
+      const target = ids.get(edge.target);
+      if (!source || !target) return;
+      const label = edge.data?.label ? `|${cleanMermaidText(edge.data.label)}|` : "";
+      if (edge.data?.arrow === "double") lines.push(`  ${source} <--${label}--> ${target}`);
+      else if (edge.data?.arrow === "none") lines.push(`  ${source} ---${label} ${target}`);
+      else lines.push(`  ${source} -->${label} ${target}`);
+    });
+    return lines.join("\n");
+  };
   const parseDiagramJson = (source: string): { nodes: Node<NodeData>[]; edges: Edge<EdgeData>[] } => {
     const value: unknown = JSON.parse(source);
     if (!value || typeof value !== "object" || !Array.isArray((value as { nodes?: unknown }).nodes) || !Array.isArray((value as { edges?: unknown }).edges)) {
@@ -2133,6 +2175,28 @@ function Editor({ project }: { project: Project }) {
       if (closeImport) setImportError(message);
       else setCodeError(message);
     }
+  };
+  const activeCodeSource = () => codeFormat === "mermaid" ? mermaidDiagram() : codeDraft;
+  const refreshCodeSource = () => {
+    setCodeError("");
+    setCodeCopied(false);
+    setCodeDraft(codeFormat === "mermaid" ? mermaidDiagram() : diagramJson());
+  };
+  const copyCodeSource = async () => {
+    const source = codeFormat === "mermaid" ? mermaidDiagram() : codeDraft;
+    await navigator.clipboard.writeText(source);
+    setCodeCopied(true);
+    window.setTimeout(() => setCodeCopied(false), 1400);
+  };
+  const downloadMermaidMarkdown = () => {
+    const source = mermaidDiagram();
+    const blob = new Blob([`## ${project.name}\n\n\`\`\`mermaid\n${source}\n\`\`\`\n`], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${project.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "diagram"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
   const openImportDialog = () => {
     setImportDraft(diagramJson());
@@ -2952,19 +3016,19 @@ function Editor({ project }: { project: Project }) {
             ))}
            </div></>}
              {leftTab === "code" && <div className="code-panel">
-              <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>Diagram JSON</strong></div><div className="code-panel-actions"><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }} title="Refresh current JSON">Refresh</button><button className="quiet" onClick={() => setCodeFullscreen(true)} title="Open code in full screen"><Maximize2 size={14} /> Full screen</button></div></div>
+              <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>{codeFormat === "mermaid" ? "Mermaid Markdown" : "Diagram JSON"}</strong></div><div className="code-format-tabs" role="tablist" aria-label="Code format"><button className={codeFormat === "json" ? "active" : ""} onClick={() => { setCodeFormat("json"); setCodeDraft(diagramJson()); setCodeError(""); setCodeCopied(false); }} role="tab" aria-selected={codeFormat === "json"}><FileJson size={13} /> JSON</button><button className={codeFormat === "mermaid" ? "active" : ""} onClick={() => { setCodeFormat("mermaid"); setCodeDraft(mermaidDiagram()); setCodeError(""); setCodeCopied(false); }} role="tab" aria-selected={codeFormat === "mermaid"}>⌘ Mermaid</button></div><div className="code-panel-actions"><button className="quiet" onClick={refreshCodeSource} title={`Refresh ${codeFormat === "mermaid" ? "Mermaid" : "JSON"}`}>Refresh</button><button className="quiet" onClick={() => void copyCodeSource()} title="Copy current code"><Copy size={13} /> {codeCopied ? "Copied" : "Copy"}</button>{codeFormat === "mermaid" && <button className="quiet" onClick={downloadMermaidMarkdown} title="Download Markdown"><Download size={13} /> .md</button>}<button className="quiet" onClick={() => setCodeFullscreen(true)} title="Open code in full screen"><Maximize2 size={14} /> Full screen</button></div></div>
                {!codeFullscreen && <Suspense fallback={<div className="diagram-monaco-editor" />}><MonacoEditor
                  className="diagram-monaco-editor"
                  height="100%"
-                language="json"
+                language={codeFormat === "mermaid" ? "markdown" : "json"}
                 theme="light"
-                value={codeDraft}
+                value={codeFormat === "mermaid" ? mermaidDiagram() : codeDraft}
                 onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }}
-                onChange={(value) => setCodeDraft(value ?? "")}
-                 options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
+                onChange={(value) => { if (codeFormat === "json") setCodeDraft(value ?? ""); }}
+                 options={{ automaticLayout: true, readOnly: codeFormat === "mermaid", minimap: { enabled: false }, fontSize: 13, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
                /></Suspense>}
              {codeError && <p className="code-error">{codeError}</p>}
-             <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button>
+             {codeFormat === "json" ? <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button> : <p className="code-mermaid-hint">Copy this syntax or download it as a Markdown file with a Mermaid fence.</p>}
            </div>}
           <div className="left-footer">
             <div className="hint">
@@ -3282,10 +3346,10 @@ function Editor({ project }: { project: Project }) {
         </div>}
         {codeFullscreen && <div className="code-fullscreen-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCodeFullscreen(false)}>
           <section className="code-fullscreen" role="dialog" aria-modal="true" aria-labelledby="fullscreen-code-title">
-            <header className="code-fullscreen-head"><div><span className="eyebrow">Editable source</span><h2 id="fullscreen-code-title">Diagram JSON</h2></div><div className="code-panel-actions"><button className="quiet" onClick={() => { setCodeDraft(diagramJson()); setCodeError(""); }}>Refresh</button><button className="quiet" onClick={() => setCodeFullscreen(false)} title="Close full screen"><X size={16} /> Close</button></div></header>
-            <div className="code-fullscreen-editor"><Suspense fallback={<div className="code-fullscreen-editor" />}><MonacoEditor height="100%" language="json" theme="light" value={codeDraft} onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }} onChange={(value) => setCodeDraft(value ?? "")} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 14, bottom: 14 } }} /></Suspense></div>
+            <header className="code-fullscreen-head"><div><span className="eyebrow">Editable source</span><h2 id="fullscreen-code-title">{codeFormat === "mermaid" ? "Mermaid Markdown" : "Diagram JSON"}</h2></div><div className="code-format-tabs" role="tablist" aria-label="Full screen code format"><button className={codeFormat === "json" ? "active" : ""} onClick={() => { setCodeFormat("json"); setCodeDraft(diagramJson()); setCodeError(""); }}><FileJson size={13} /> JSON</button><button className={codeFormat === "mermaid" ? "active" : ""} onClick={() => { setCodeFormat("mermaid"); setCodeDraft(mermaidDiagram()); setCodeError(""); }}>⌘ Mermaid</button></div><div className="code-panel-actions"><button className="quiet" onClick={refreshCodeSource}>Refresh</button><button className="quiet" onClick={() => void copyCodeSource()}><Copy size={13} /> {codeCopied ? "Copied" : "Copy"}</button>{codeFormat === "mermaid" && <button className="quiet" onClick={downloadMermaidMarkdown}><Download size={13} /> .md</button>}<button className="quiet" onClick={() => setCodeFullscreen(false)} title="Close full screen"><X size={16} /> Close</button></div></header>
+            <div className="code-fullscreen-editor"><Suspense fallback={<div className="code-fullscreen-editor" />}><MonacoEditor height="100%" language={codeFormat === "mermaid" ? "markdown" : "json"} theme="light" value={codeFormat === "mermaid" ? mermaidDiagram() : codeDraft} onMount={(editor) => { codeEditorRef.current = editor; setCodeEditorReady((value) => value + 1); }} onChange={(value) => { if (codeFormat === "json") setCodeDraft(value ?? ""); }} options={{ automaticLayout: true, readOnly: codeFormat === "mermaid", minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 14, bottom: 14 } }} /></Suspense></div>
             {codeError && <p className="code-error">{codeError}</p>}
-            <footer className="code-fullscreen-actions"><button onClick={() => setCodeFullscreen(false)}>Close</button><button className="primary" onClick={() => { applyDiagramJson(codeDraft); setCodeFullscreen(false); }}><FileJson size={14} /> Apply JSON</button></footer>
+            <footer className="code-fullscreen-actions"><button onClick={() => setCodeFullscreen(false)}>Close</button>{codeFormat === "json" ? <button className="primary" onClick={() => { applyDiagramJson(codeDraft); setCodeFullscreen(false); }}><FileJson size={14} /> Apply JSON</button> : <button className="primary" onClick={downloadMermaidMarkdown}><Download size={14} /> Download Markdown</button>}</footer>
           </section>
         </div>}
         {exportBusy && <div className="export-busy" role="status" aria-live="polite">
