@@ -3028,7 +3028,7 @@ function Editor({ project }: { project: Project }) {
                  options={{ automaticLayout: true, readOnly: codeFormat === "mermaid", minimap: { enabled: false }, fontSize: 13, lineNumbers: "on", glyphMargin: false, folding: true, wordWrap: "off", scrollBeyondLastLine: false, padding: { top: 10, bottom: 10 } }}
                /></Suspense>}
              {codeError && <p className="code-error">{codeError}</p>}
-             {codeFormat === "json" ? <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button> : <p className="code-mermaid-hint">Copy this syntax or download it as a Markdown file with a Mermaid fence.</p>}
+             {codeFormat === "json" && <button className="code-apply" onClick={() => applyDiagramJson(codeDraft)}><FileJson size={14} /> Apply JSON</button>}
            </div>}
           <div className="left-footer">
             <div className="hint">
