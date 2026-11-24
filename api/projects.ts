@@ -103,7 +103,11 @@ async function authenticate(req: ApiRequest) {
   if (!config) throw Object.assign(new Error("WorkOS client is not configured."), { status: 500 });
   const match = (header(req, "authorization") ?? "").match(/^Bearer\s+(.+)$/i);
   if (!match) throw Object.assign(new Error("Authentication required."), { status: 401 });
-  const verified = await jwtVerify(match[1], config.jwks, { issuer: `https://${config.hostname}/`, audience: config.clientId });
+  const verified = await jwtVerify(match[1], config.jwks, { issuer: `https://${config.hostname}/` });
+  const tokenClientId = typeof verified.payload.client_id === "string" ? verified.payload.client_id : "";
+  if (tokenClientId && tokenClientId !== config.clientId) {
+    throw Object.assign(new Error("Access token was issued for a different WorkOS application."), { status: 401 });
+  }
   const userId = typeof verified.payload.sub === "string" ? verified.payload.sub : "";
   if (!userId) throw Object.assign(new Error("Access token has no subject."), { status: 401 });
   const email = typeof verified.payload.email === "string" ? verified.payload.email : null;
