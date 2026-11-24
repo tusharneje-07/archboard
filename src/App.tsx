@@ -1395,6 +1395,10 @@ function App() {
       return;
     }
     let cancelled = false;
+    const deadline = <T,>(promise: Promise<T>, timeoutMs = 12_000) => Promise.race([
+      promise,
+      new Promise<T>((_, reject) => window.setTimeout(() => reject(new Error("Project sync timed out.")), timeoutMs)),
+    ]);
     void (async () => {
       try {
         const migrationKey = `archboard-migrated-user:${user.id}`;
@@ -1403,7 +1407,7 @@ function App() {
           for (const summary of cached) {
             const project = decompressProject(summary);
             if (!project) continue;
-            await saveRemoteProject(getAccessToken, {
+            await deadline(saveRemoteProject(getAccessToken, {
               id: project.id,
               name: project.name,
               createdAt: project.createdAt,
@@ -1412,11 +1416,11 @@ function App() {
               nodeCount: project.nodes.length,
               compression: compressProject(project).compression,
               workspaceId: readWorkspaces().membership[project.id] ?? null,
-            });
+            }));
           }
           localStorage.setItem(migrationKey, "true");
         }
-        const remote = await listRemoteProjects(getAccessToken);
+        const remote = await deadline(listRemoteProjects(getAccessToken));
         if (cancelled) return;
         const summaries = remote.projects.map((project): ProjectSummary => ({
           id: project.id,
@@ -1487,7 +1491,8 @@ function App() {
     return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Sign in</button></div></section></main>;
   }
   if (isHome) return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} userEmail={user.email ?? ""} signOut={signOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
-  if (!remoteReady) return <div className="auth-loading"><BrandMark /><span>Loading your workspace…</span></div>;
+  // Remote sync runs in the background. Cached projects render immediately,
+  // so a slow or unavailable SQLite API cannot block an authenticated user.
   if (!loadedProject || loadedProject.id !== projectId) return null;
   return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} syncProjectToRemote={syncProjectToRemote} /></ReactFlowProvider>;
 }
