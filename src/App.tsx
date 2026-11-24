@@ -936,6 +936,15 @@ function moveProjectsToWorkspace(projectIds: string[], folderId: string | null) 
   }
   writeWorkspaces({ ...state, membership });
 }
+function projectRouteHash(projectId: string) {
+  const clean = projectId.trim();
+  const prefix = clean.slice(0, 3);
+  const suffix = clean.slice(-3);
+  return `${prefix}-${md5(clean)}-${suffix}`;
+}
+function findProjectIdByRouteHash(routeHash: string) {
+  return readProjectSummaries(false).find((summary) => projectRouteHash(summary.id) === routeHash)?.id ?? null;
+}
 function navigate(path: string) {
   window.history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1394,7 +1403,7 @@ function App() {
       setPath(`/${profileHash}`);
       return;
     }
-    if (!isLoading && user && profileHash && window.location.pathname !== `/${profileHash}` && !window.location.pathname.startsWith('/project/') && !window.location.pathname.startsWith('/present/')) {
+    if (!isLoading && user && profileHash && window.location.pathname !== `/${profileHash}` && !window.location.pathname.startsWith('/project/') && !window.location.pathname.includes('/projects/') && !window.location.pathname.startsWith('/present/')) {
       window.history.replaceState({}, '', `/${profileHash}`);
       setPath(`/${profileHash}`);
     }
@@ -1469,10 +1478,14 @@ function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => { window.removeEventListener("popstate", onPopState); window.removeEventListener("hashchange", onHashChange); };
   }, []);
-  const projectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1];
+  const legacyProjectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1] ?? null;
+  const hashedProjectRoute = path.match(/^\/([a-f0-9]{32})\/projects\/([^/]+)\/?$/);
+  const projectId = hashedProjectRoute
+    ? findProjectIdByRouteHash(hashedProjectRoute[2])
+    : legacyProjectId;
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
   const profileId = path.match(/^\/([a-f0-9]{32})\/?$/)?.[1];
-  const isHome = !projectId && !presentationId && !/^\/view-archboard-dig\/?$/.test(path);
+  const isHome = !projectId && !presentationId && !profileId && !/^\/view-archboard-dig\/?$/.test(path);
   useEffect(() => {
     if (isHome) {
       closeActiveProject();
@@ -1486,7 +1499,7 @@ function App() {
     }
     const project = openProject(projectId);
     if (!project) {
-      navigate("/");
+      navigate(profileHash ? `/${profileHash}` : "/");
       return;
     }
     setLoadedProject(project);
@@ -1967,7 +1980,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
       workspaceId: null,
     }).catch((error) => setImportNotice(error instanceof Error ? error.message : "Could not save project."));
     refresh();
-    navigate(`/project/${id}`);
+    navigate(profileHash ? `/${profileHash}/projects/${projectRouteHash(id)}` : `/project/${id}`);
   };
   const renameProject = (project: ProjectSummary) => { setDraftName(project.name); setDialog({ type: "rename", project }); };
   const duplicateProject = (project: ProjectSummary) => {
@@ -2083,9 +2096,9 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
   const dialogBody = !dialog ? "" : dialog.type === "delete" ? (dialog.projects.length === 1 ? "This project and its local diagram data will be removed." : `These ${dialog.projects.length} projects and their local diagram data will be removed.`) : dialog.type === "workspace-delete" ? "Projects inside will move back to your home screen." : dialog.type === "workspace-create" ? "Group related projects into a simple folder. You can move projects in and out at any time." : "";
   const renderProjectCard = (project: ProjectSummary) => {
     const selected = selectedIds.has(project.id);
-    return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} draggable onDragStart={(event) => startProjectDrag(event, project)} onDragEnd={finishProjectDrag} onDoubleClick={() => navigate(`/project/${project.id}`)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, projectId: project.id }); }}>
+    return <article className={`project-card ${selected ? "selected" : ""}`} key={project.id} draggable onDragStart={(event) => startProjectDrag(event, project)} onDragEnd={finishProjectDrag} onDoubleClick={() => navigate(profileHash ? `/${profileHash}/projects/${projectRouteHash(project.id)}` : `/project/${project.id}`)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setHomeMenu({ x: event.clientX, y: event.clientY, projectId: project.id }); }}>
       <button className={`project-select ${selected ? "selected" : ""}`} onClick={(event) => { event.stopPropagation(); toggleProjectSelection(project.id); }} onDoubleClick={(event) => event.stopPropagation()} aria-pressed={selected} aria-label={selected ? "Deselect project" : "Select project"} title={selected ? "Deselect project" : "Select project"}>{selected && <Check size={13} />}</button>
-      <button className="project-preview" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
+      <button className="project-preview" aria-label={`Open ${project.name}`} onClick={() => navigate(profileHash ? `/${profileHash}/projects/${projectRouteHash(project.id)}` : `/project/${project.id}`)}><span className="preview-frame"><span /><span /><span /></span></button>
       <div className="project-card-body"><div><h2>{project.name}</h2><p>{project.nodeCount} elements · {relativeUpdatedLabel(project.updatedAt)}</p></div><div className="project-actions"><button title="Open project" aria-label={`Open ${project.name}`} onClick={() => navigate(`/project/${project.id}`)}><FolderOpen size={14} /></button><button title="Rename project" aria-label={`Rename ${project.name}`} onClick={() => renameProject(project)}><Pencil size={14} /></button><button title="Duplicate project" aria-label={`Duplicate ${project.name}`} onClick={() => duplicateProject(project)}><Copy size={14} /></button><button title="Delete project" aria-label={`Delete ${project.name}`} onClick={() => deleteProject(project)}><Trash2 size={14} /></button></div></div>
     </article>;
   };
@@ -2171,7 +2184,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
       {homeMenu.projectId ? (menuProject && (() => {
         const folder = folderById.get(workspaceState.membership[menuProject.id]);
         return <>
-          <button onClick={() => { navigate(`/project/${menuProject.id}`); setHomeMenu(null); }}><FolderOpen size={14} /> Open</button>
+          <button onClick={() => { navigate(profileHash ? `/${profileHash}/projects/${projectRouteHash(menuProject.id)}` : `/project/${menuProject.id}`); setHomeMenu(null); }}><FolderOpen size={14} /> Open</button>
           <button onClick={() => { renameProject(menuProject); setHomeMenu(null); }}><Pencil size={14} /> Rename</button>
           <button onClick={() => { duplicateProject(menuProject); setHomeMenu(null); }}><Copy size={14} /> Duplicate</button>
           <button onClick={() => openMoveDialog([menuProject.id])}><FolderInput size={14} /> Move to workspace…</button>

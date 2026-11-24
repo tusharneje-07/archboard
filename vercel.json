@@ -31,6 +31,10 @@
       "destination": "/api/profile"
     },
     {
+      "source": "/([a-f0-9]{32})/projects/(.+)",
+      "destination": "/index.html"
+    },
+    {
       "source": "/([a-f0-9]{32})/profile/",
       "destination": "/api/profile"
     },
