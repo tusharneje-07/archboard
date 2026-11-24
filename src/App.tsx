@@ -1351,7 +1351,10 @@ function inferIconCategory(identifier: string): IconCategory {
 function App() {
   const { isLoading, user, signIn, signUp, signOut, getAccessToken } = useAuth();
   const startAuth = (mode: "sign-in" | "sign-up" = "sign-in") => {
-    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const currentPath = window.location.pathname;
+    const returnTo = currentPath === '/callback'
+      ? '/'
+      : `${currentPath}${window.location.search}${window.location.hash}`;
     sessionStorage.setItem("archboard-post-auth-return", returnTo);
     void (mode === "sign-up"
       ? signUp({ state: { returnTo } })

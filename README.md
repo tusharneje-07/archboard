@@ -30,6 +30,7 @@ ARCHBOARD_SQLITE_PATH=./data/archboard.sqlite
 In the WorkOS dashboard configure:
 
 Staging environment:
+- Configure CORS / Allowed web origin: `http://localhost:5173`
 - Redirect URI: `http://localhost:5173/callback`
 - Initiate login URI: `http://localhost:5173/login`
 - Sign-out redirect: `http://localhost:5173`

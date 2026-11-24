@@ -22,7 +22,9 @@ createRoot(document.getElementById('root')!).render(
           || sessionStorage.getItem('archboard-post-auth-return')
           || '/'
         sessionStorage.removeItem('archboard-post-auth-return')
-        const safeReturn = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/'
+        const safeReturn = returnTo.startsWith('/') && !returnTo.startsWith('//') && returnTo !== '/callback'
+          ? returnTo
+          : '/'
         window.history.replaceState({}, '', safeReturn)
         window.dispatchEvent(new PopStateEvent('popstate'))
       }}
