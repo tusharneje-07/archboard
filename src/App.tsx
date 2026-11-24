@@ -35,6 +35,8 @@ import {
 import { useAuth } from "@workos-inc/authkit-react";
 import md5 from "md5";
 import { authenticatedProjectRequest, deleteRemoteProjects, listRemoteProjects, saveRemoteProject, type RemoteProject } from "./project-api";
+import GradientWaves from "./components/react-bits/GradientWaves/GradientWaves";
+import TechText from "./components/react-bits/TechText/TechText";
 import {
   AlignCenter,
   AlignLeft,
@@ -1517,15 +1519,15 @@ function App() {
     return project ? <ReactFlowProvider><PresentationView project={project} /></ReactFlowProvider> : <div className="presentation-missing">Project not found.</div>;
   }
   if (isLoading) {
-    if (authTimedOut) return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Login is taking too long</h1><p>The callback may not have completed. Retry sign-in or clear this browser session and try again.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Retry sign-in</button><button onClick={() => { for (let index = sessionStorage.length - 1; index >= 0; index -= 1) { const key = sessionStorage.key(index); if (key?.startsWith("workos") || key?.includes("authkit") || key === "archboard-post-auth-return") sessionStorage.removeItem(key); } window.location.replace("/"); }}>Reset login state</button></div></section></main>;
+     if (authTimedOut) return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Login is taking too long</h1><p>The callback may not have completed. Retry sign-in or clear this browser session and try again.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Retry sign-in</button><button onClick={() => { for (let index = sessionStorage.length - 1; index >= 0; index -= 1) { const key = sessionStorage.key(index); if (key?.startsWith("workos") || key?.includes("authkit") || key === "archboard-post-auth-return") sessionStorage.removeItem(key); } window.location.replace("/auth"); }}>Reset login state</button></div></section></main>;
     return <div className="auth-loading"><span>Checking Your Workspace...</span></div>;
   }
   if (!user) {
     if (isRoot) {
       return <main className="root-entry"><h1>Archboard Diagram Editor</h1></main>;
     }
-    if (isAuth || isHome) {
-      return <main className="auth-shell"><section className="auth-showcase" aria-hidden="true"><div className="auth-showcase-grid" /><BrandMark /><div className="auth-showcase-copy"><span>WORKSPACE · 25 PROJECTS</span><h2>Shape systems<br />clearly.</h2><p>Build architecture diagrams, keep every change synced, and<br />share the result in any format.</p></div></section><section className="auth-card" aria-labelledby="auth-title"><div className="auth-mobile-brand"><BrandMark /></div><h1 id="auth-title">Welcome to Archboard</h1><p>Sign in to access your diagrams and keep every project backed up.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}><span>Try it out</span><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 10h10M10 6l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button></div></section></main>;
+     if (isAuth || isHome) {
+       return <PremiumAuthScreen onStart={() => startAuth("sign-in")} />;
     }
     return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Sign in</button></div></section></main>;
   }
@@ -1791,6 +1793,95 @@ function relativeUpdatedLabel(timestamp: number) {
   return `${years} ${years === 1 ? "year" : "years"} ago`;
 }
 type ProjectDialog = { type: "rename"; project: ProjectSummary } | { type: "delete"; projects: ProjectSummary[] } | { type: "workspace-create" } | { type: "workspace-rename"; folder: WorkspaceFolder } | { type: "workspace-delete"; folder: WorkspaceFolder };
+function PremiumAuthScreen({ onStart }: { onStart: () => void }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-showcase" aria-labelledby="auth-showcase-title">
+        <GradientWaves
+          className="auth-waves"
+          horizonColor="#071b2d"
+          waveColor="#0a5968"
+          crestColor="#a7e4e5"
+          backgroundColor="#071b2d"
+          speed={0.24}
+          amplitude={2.1}
+          waveScale={0.72}
+          waveRatio={0.78}
+          swell={24}
+          turbulence={13}
+          tilt={62}
+          zoom={1.08}
+          fogDepth={18}
+          relief={0.92}
+          lightAngle={132}
+          sheen={0.48}
+          brightness={0.96}
+          opacity={0.94}
+          grain={0.12}
+          quality="medium"
+          mouseInteraction
+          parallaxStrength={0.42}
+          mouseStrength={0.48}
+          swellOnClick
+        />
+        <div className="auth-showcase-wash" />
+        <div className="auth-showcase-inner">
+          <BrandMark />
+          <div className="auth-showcase-copy">
+            <div className="tech-heading-wrap">
+              <h1 id="auth-showcase-title" className="sr-only">Shape Systems Clearly</h1>
+              <TechText
+                text={"Shape\nSystems Clearly"}
+                fontFamily="Manrope, sans-serif"
+                fontWeight={800}
+                fontSize={142}
+                letterSpacing={-0.065}
+                color="#f4ffff"
+                accentColor="#9ce5e6"
+                align="left"
+                reach={190}
+                softness={0.72}
+                dashLength={4}
+                dashGap={3}
+                strokeWidth={1.35}
+                reveal="letter"
+                specks={10}
+                selection
+                labels={false}
+                draggable={false}
+                bounce={0.22}
+                sweep={false}
+                speed={0.7}
+                clickKick
+                intro="none"
+                guides={false}
+                className="auth-tech-text"
+              />
+            </div>
+            <p>Turn complex architecture into a shared visual language for the people building what comes next.</p>
+          </div>
+        </div>
+      </section>
+      <section className="auth-card" aria-labelledby="auth-title">
+        <div className="auth-mobile-brand"><BrandMark /></div>
+        <div className="auth-card-content">
+          <div className="auth-accent" aria-hidden="true"><span /><span /><span /></div>
+          <span className="auth-card-eyebrow">Your architecture workspace</span>
+          <h2 id="auth-title">Welcome to<br /><em>Archboard.</em></h2>
+          <p>Sign in to keep your diagrams close, your thinking clear, and every project backed up.</p>
+          <div className="auth-actions">
+            <button className="primary auth-cta" type="button" onClick={onStart}>
+              <span>Sign in to workspace</span>
+              <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true">
+                <path d="M3.5 10h11M10.5 5.5 15 10l-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
 function BrandMark({ onClick }: { onClick?: () => void }) {
   const content = <><span>AB</span><div><strong>archboard</strong><small>systems, clearly</small></div></>;
   return onClick
