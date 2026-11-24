@@ -1527,7 +1527,7 @@ function App() {
   // Remote sync runs in the background. Cached projects render immediately,
   // so a slow or unavailable SQLite API cannot block an authenticated user.
   if (!loadedProject || loadedProject.id !== projectId) return null;
-  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} syncProjectToRemote={syncProjectToRemote} /></ReactFlowProvider>;
+  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} profileHash={profileHash} syncProjectToRemote={syncProjectToRemote} /></ReactFlowProvider>;
 }
 type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
 function PresentationView({ project, showExit = true, showToolbar = true }: { project: Project; showExit?: boolean; showToolbar?: boolean }) {
@@ -2212,7 +2212,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
     {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialogEyebrow}</span><h2>{dialogHeading}</h2>{dialogHasInput ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>{dialogBody}</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialogDanger ? "danger" : "primary"} onClick={submitDialog}>{dialogConfirm}</button></div></div></div>}
   </main>;
 }
-function Editor({ project, syncProjectToRemote }: { project: Project; syncProjectToRemote: (project: Project) => Promise<void> }) {
+function Editor({ project, profileHash, syncProjectToRemote }: { project: Project; profileHash: string; syncProjectToRemote: (project: Project) => Promise<void> }) {
   const state = useDiagram(),
     {
       snapshot,
@@ -2307,7 +2307,7 @@ function Editor({ project, syncProjectToRemote }: { project: Project; syncProjec
   };
   const goHome = () => {
     closeActiveProject();
-    navigate("/");
+    navigate(profileHash ? `/${profileHash}` : "/");
   };
   const applyLayerSelection = (ids: string[], primary: string) => {
     const selected = new Set(ids);
