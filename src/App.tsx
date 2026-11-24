@@ -523,7 +523,7 @@ const initialEdges: Edge<EdgeData>[] = [
       labelHtml: false,
       labelFontSize: 14,
     },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#8C6634" },
+    markerEnd: undefined,
   },
   {
     id: "client-server-exchange",
@@ -545,7 +545,7 @@ const initialEdges: Edge<EdgeData>[] = [
       labelHtml: false,
       labelFontSize: 14,
     },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#27576B" },
+    markerEnd: undefined,
   },
 ];
 
@@ -1189,10 +1189,18 @@ function SmartEdge({
   const orthogonalPath = orthogonalPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
   const path = data?.route === "orthogonal" ? orthogonalPath : data?.route === "free" ? `M ${lineSource.x} ${lineSource.y} C ${controlOne.x} ${controlOne.y}, ${controlTwo.x} ${controlTwo.y}, ${lineTarget.x} ${lineTarget.y}` : `M ${lineSource.x} ${lineSource.y} L ${lineTarget.x} ${lineTarget.y}`;
   const labelX = data?.route === "orthogonal" ? midX : data?.route === "free" ? (lineSource.x + 2 * controlOne.x + 2 * controlTwo.x + lineTarget.x) / 6 : lineSource.x + (lineTarget.x - lineSource.x) / 2;
-  const labelY = data?.route === "orthogonal" ? (lineSource.y + lineTarget.y) / 2 - 8 : data?.route === "free" ? (lineSource.y + 2 * controlOne.y + 2 * controlTwo.y + lineTarget.y) / 6 - 8 : lineSource.y + (lineTarget.y - lineSource.y) / 2 - 8;
+  const labelY = data?.route === "orthogonal" ? (lineSource.y + lineTarget.y) / 2 - 10 : data?.route === "free" ? (lineSource.y + 2 * controlOne.y + 2 * controlTwo.y + lineTarget.y) / 6 - 12 : lineSource.y + (lineTarget.y - lineSource.y) / 2 - 8;
   const orthogonalEnd = orthogonalPoints[orthogonalPoints.length - 1], orthogonalBeforeEnd = orthogonalPoints[orthogonalPoints.length - 2], orthogonalAfterStart = orthogonalPoints[1];
-  const endAngle = data?.route === "orthogonal" ? Math.atan2(orthogonalEnd.y - orthogonalBeforeEnd.y, orthogonalEnd.x - orthogonalBeforeEnd.x) * 180 / Math.PI : data?.route === "free" ? Math.atan2(lineTarget.y - controlTwo.y, lineTarget.x - controlTwo.x) * 180 / Math.PI : Math.atan2(lineTarget.y - lineSource.y, lineTarget.x - lineSource.x) * 180 / Math.PI;
-  const startAngle = data?.route === "orthogonal" ? Math.atan2(orthogonalAfterStart.y - lineSource.y, orthogonalAfterStart.x - lineSource.x) * 180 / Math.PI + 180 : data?.route === "free" ? Math.atan2(lineSource.y - controlOne.y, lineSource.x - controlOne.x) * 180 / Math.PI : endAngle + 180;
+  const endAngle = data?.route === "orthogonal"
+    ? Math.atan2(orthogonalEnd.y - orthogonalBeforeEnd.y, orthogonalEnd.x - orthogonalBeforeEnd.x) * 180 / Math.PI
+    : data?.route === "free"
+      ? Math.atan2(lineTarget.y - controlTwo.y, lineTarget.x - controlTwo.x) * 180 / Math.PI
+      : Math.atan2(lineTarget.y - lineSource.y, lineTarget.x - lineSource.x) * 180 / Math.PI;
+  const startAngle = data?.route === "orthogonal"
+    ? Math.atan2(orthogonalAfterStart.y - lineSource.y, orthogonalAfterStart.x - lineSource.x) * 180 / Math.PI
+    : data?.route === "free"
+      ? Math.atan2(controlOne.y - lineSource.y, controlOne.x - lineSource.x) * 180 / Math.PI
+      : endAngle + 180;
   const labelAngle = data?.labelDirection === "vertical" ? 90 : data?.labelDirection === "along" ? Math.atan2(lineTarget.y - lineSource.y, lineTarget.x - lineSource.x) * 180 / Math.PI : 0;
   const arrow = (x: number, y: number, angle: number) => (
     <polygon
@@ -1224,8 +1232,8 @@ function SmartEdge({
         strokeWidth={16}
         className="edge-hit-area"
       />
-      {data?.arrow !== "none" && <polygon className="edge-arrow" points="0,0 -12,-6 -12,6" transform={`translate(${lineTarget.x} ${lineTarget.y}) rotate(${endAngle})`} fill={data?.stroke} stroke={data?.stroke} strokeWidth="1" />}
-      {data?.arrow === "double" && <polygon className="edge-arrow" points="0,0 -12,-6 -12,6" transform={`translate(${lineSource.x} ${lineSource.y}) rotate(${startAngle})`} fill={data?.stroke} stroke={data?.stroke} strokeWidth="1" />}
+      {data?.arrow !== "none" && <polygon className="edge-arrow" points="0,0 -10,-5 -10,5" transform={`translate(${lineTarget.x} ${lineTarget.y}) rotate(${endAngle})`} fill={data?.stroke} stroke={data?.stroke} strokeWidth="1" />}
+      {data?.arrow === "double" && <polygon className="edge-arrow" points="0,0 -10,-5 -10,5" transform={`translate(${lineSource.x} ${lineSource.y}) rotate(${startAngle + 180})`} fill={data?.stroke} stroke={data?.stroke} strokeWidth="1" />}
       {data?.label && (
         <EdgeLabelRenderer>
           <div
@@ -2824,7 +2832,8 @@ function Editor({ project, syncProjectToRemote }: { project: Project; syncProjec
             id: `edge-${Date.now()}`,
             type: "smart",
             data,
-            markerEnd: { type: MarkerType.ArrowClosed, color: data.stroke },
+            markerStart: undefined,
+            markerEnd: undefined,
           },
           es,
         ),
@@ -2869,20 +2878,8 @@ function Editor({ project, syncProjectToRemote }: { project: Project; syncProjec
           ? {
               ...e,
               data: { ...e.data!, ...patch },
-              markerStart:
-                patch.arrow === "double"
-                  ? {
-                      type: MarkerType.ArrowClosed,
-                      color: patch.stroke ?? e.data?.stroke,
-                    }
-                  : undefined,
-              markerEnd:
-                patch.arrow === "none"
-                  ? undefined
-                  : {
-                      type: MarkerType.ArrowClosed,
-                      color: patch.stroke ?? e.data?.stroke,
-                    },
+              markerStart: undefined,
+              markerEnd: undefined,
             }
           : e,
       ),
