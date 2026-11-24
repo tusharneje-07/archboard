@@ -1,4 +1,3 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AuthKitProvider } from '@workos-inc/authkit-react'
 import App from './App'
@@ -12,7 +11,6 @@ const redirectUri = devEnvironment
   : (import.meta.env.VITE_WORKOS_PROD_REDIRECT_URI as string | undefined) || 'https://archboard-iota.vercel.app/callback'
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
     <AuthKitProvider
       clientId={clientId}
       apiHostname={apiHostname}
@@ -26,11 +24,10 @@ createRoot(document.getElementById('root')!).render(
         sessionStorage.removeItem('archboard-post-auth-return')
         const safeReturn = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/'
         window.history.replaceState({}, '', safeReturn)
-        window.dispatchEvent(new HashChangeEvent('hashchange'))
+        window.dispatchEvent(new PopStateEvent('popstate'))
       }}
       onRefreshFailure={({ signIn }) => signIn()}
     >
       <App />
-    </AuthKitProvider>
-  </StrictMode>,
+    </AuthKitProvider>,
 )
