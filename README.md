@@ -21,12 +21,13 @@ WORKOS_CLIENT_ID=client_...
 VITE_WORKOS_CLIENT_ID=client_...
 WORKOS_API_HOSTNAME=api.workos.com
 VITE_WORKOS_API_HOSTNAME=
+VITE_WORKOS_REDIRECT_URI=http://localhost:5173
 ARCHBOARD_SQLITE_PATH=./data/archboard.sqlite
 ```
 
 In the WorkOS dashboard configure:
 
-- Redirect URI: `http://localhost:5173/callback`
+- Redirect URI: `http://localhost:5173`
 - Initiate login URI: `http://localhost:5173/login`
 - Sign-out redirect: `http://localhost:5173`
 - Allowed web origin: `http://localhost:5173`
