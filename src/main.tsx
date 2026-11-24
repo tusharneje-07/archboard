@@ -6,7 +6,10 @@ import './styles.css'
 
 const clientId = import.meta.env.VITE_WORKOS_CLIENT_ID as string
 const apiHostname = (import.meta.env.VITE_WORKOS_API_HOSTNAME as string | undefined) || undefined
-const redirectUri = (import.meta.env.VITE_WORKOS_REDIRECT_URI as string | undefined) || window.location.origin
+const devEnvironment = (import.meta.env.VITE_ARCHBOARD_DEV as string | undefined)?.toLowerCase() === 'true'
+const redirectUri = devEnvironment
+  ? (import.meta.env.VITE_WORKOS_REDIRECT_URI as string | undefined) || 'http://localhost:5173'
+  : 'https://archboard-iota.vercel.app/'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -14,7 +17,7 @@ createRoot(document.getElementById('root')!).render(
       clientId={clientId}
       apiHostname={apiHostname}
       redirectUri={redirectUri}
-      devMode={import.meta.env.DEV || undefined}
+      devMode={devEnvironment || undefined}
       onRedirectCallback={() => {
         if (window.location.pathname === '/callback' || window.location.pathname === '/login') {
           window.history.replaceState({}, '', '/')

@@ -22,6 +22,7 @@ VITE_WORKOS_CLIENT_ID=client_...
 WORKOS_API_HOSTNAME=api.workos.com
 VITE_WORKOS_API_HOSTNAME=
 VITE_WORKOS_REDIRECT_URI=http://localhost:5173
+VITE_ARCHBOARD_DEV=true
 ARCHBOARD_SQLITE_PATH=./data/archboard.sqlite
 ```
 
@@ -32,7 +33,7 @@ In the WorkOS dashboard configure:
 - Sign-out redirect: `http://localhost:5173`
 - Allowed web origin: `http://localhost:5173`
 
-For deployed environments, use HTTPS callback, login, sign-out, and allowed-origin values from the deployment domain.
+Set `VITE_ARCHBOARD_DEV=true` for local/development and `VITE_ARCHBOARD_DEV=false` for production. Production uses `https://archboard-iota.vercel.app/` as the redirect URI and disables AuthKit `devMode`. Configure the corresponding callback, login, sign-out, and allowed-origin values in both WorkOS environments.
 
 Authenticated projects are stored in SQLite at `data/archboard.sqlite` and cached in browser localStorage for offline/UI resilience. Each WorkOS user can create and retain 25 projects on the free tier. The API stores the existing compressed project JSON blob.
 
