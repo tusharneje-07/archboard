@@ -48,7 +48,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_projects_user_updated ON projects(user_id, updated_at DESC);
 `);
 
-let jwksCache: { clientId: string; hostname: string; jwks: ReturnType<typeof createRemoteJWKSet> } | null = null;
+let jwksCache: { clientId: string; hostname: string; issuer: string; jwks: ReturnType<typeof createRemoteJWKSet> } | null = null;
 
 function loadLocalEnvFallback() {
   if (process.env.WORKOS_CLIENT_ID || process.env.VITE_WORKOS_CLIENT_ID) return;
@@ -68,13 +68,23 @@ function workosConfig() {
   return { clientId, hostname };
 }
 
-function workosJwks() {
+async function workosJwks() {
   const { clientId, hostname } = workosConfig();
   if (!clientId) return null;
   if (!jwksCache || jwksCache.clientId !== clientId || jwksCache.hostname !== hostname) {
-    jwksCache = { clientId, hostname, jwks: createRemoteJWKSet(new URL(`https://${hostname}/sso/jwks/${clientId}`)) };
+    let issuer = `https://${hostname}/`;
+    let jwksUrl = `https://${hostname}/sso/jwks/${clientId}`;
+    try {
+      const discovery = await fetch(`https://${hostname}/user_management/${clientId}/.well-known/openid-configuration`);
+      if (discovery.ok) {
+        const metadata = await discovery.json() as { issuer?: string; jwks_uri?: string };
+        if (metadata.issuer) issuer = metadata.issuer;
+        if (metadata.jwks_uri) jwksUrl = metadata.jwks_uri;
+      }
+    } catch { /* Fallback to the environment API origin and legacy JWKS URL. */ }
+    jwksCache = { clientId, hostname, issuer, jwks: createRemoteJWKSet(new URL(jwksUrl)) };
   }
-  return { clientId, hostname, jwks: jwksCache.jwks };
+  return { clientId, hostname, issuer: jwksCache.issuer, jwks: jwksCache.jwks };
 }
 
 function header(req: ApiRequest, name: string) {
@@ -99,11 +109,11 @@ async function readBody(req: ApiRequest): Promise<Buffer> {
 }
 
 async function authenticate(req: ApiRequest) {
-  const config = workosJwks();
+  const config = await workosJwks();
   if (!config) throw Object.assign(new Error("WorkOS client is not configured."), { status: 500 });
   const match = (header(req, "authorization") ?? "").match(/^Bearer\s+(.+)$/i);
   if (!match) throw Object.assign(new Error("Authentication required."), { status: 401 });
-  const verified = await jwtVerify(match[1], config.jwks, { issuer: `https://${config.hostname}/` });
+  const verified = await jwtVerify(match[1], config.jwks, { issuer: config.issuer });
   const tokenClientId = typeof verified.payload.client_id === "string" ? verified.payload.client_id : "";
   if (tokenClientId && tokenClientId !== config.clientId) {
     throw Object.assign(new Error("Access token was issued for a different WorkOS application."), { status: 401 });

@@ -1440,7 +1440,7 @@ function App() {
         setRemoteReady(true);
       } catch (error) {
         if (cancelled) return;
-        setRemoteError(error instanceof Error ? error.message : "Could not sync projects.");
+        setRemoteError("");
         setProjects(readProjectSummaries());
         setRemoteReady(true);
       }
@@ -1485,7 +1485,7 @@ function App() {
   }
   if (isLoading) {
     if (authTimedOut) return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Login is taking too long</h1><p>The callback may not have completed. Retry sign-in or clear this browser session and try again.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Retry sign-in</button><button onClick={() => { for (let index = sessionStorage.length - 1; index >= 0; index -= 1) { const key = sessionStorage.key(index); if (key?.startsWith("workos") || key?.includes("authkit") || key === "archboard-post-auth-return") sessionStorage.removeItem(key); } window.location.replace("/"); }}>Reset login state</button></div></section></main>;
-    return <div className="auth-loading"><BrandMark /><span>Checking your workspace…</span></div>;
+    return <div className="auth-loading"><span>Checking Your Workspace...</span></div>;
   }
   if (!user) {
     if (isHome) {
@@ -1493,7 +1493,11 @@ function App() {
     }
     return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Sign in</button></div></section></main>;
   }
-  if (isHome) return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} userEmail={user.email ?? ""} signOut={signOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
+  if (isHome) {
+    const displayName = [user.firstName, user.lastName].filter((value): value is string => !!value).join(" ").trim()
+      || (typeof user.email === "string" ? user.email.split("@")[0] : "Archboard user");
+    return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} userName={displayName} userEmail={user.email ?? ""} signOut={signOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
+  }
   // Remote sync runs in the background. Cached projects render immediately,
   // so a slow or unavailable SQLite API cannot block an authenticated user.
   if (!loadedProject || loadedProject.id !== projectId) return null;
@@ -1757,7 +1761,7 @@ function BrandMark({ onClick }: { onClick?: () => void }) {
     ? <button className="brand-mark brand-mark-button" type="button" onClick={onClick} title="Go to home" aria-label="Go to home">{content}</button>
     : <div className="brand-mark">{content}</div>;
 }
-function HomeScreen({ projects, refresh, userEmail = "", signOut, remoteError = "", getAccessToken }: { projects: ProjectSummary[]; refresh: () => void; userEmail?: string; signOut?: () => Promise<void> | void; remoteError?: string; getAccessToken: () => Promise<string | null> }) {
+function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail = "", signOut, remoteError = "", getAccessToken }: { projects: ProjectSummary[]; refresh: () => void; userName?: string; userEmail?: string; signOut?: () => Promise<void> | void; remoteError?: string; getAccessToken: () => Promise<string | null> }) {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [draftName, setDraftName] = useState("");
   const [importNotice, setImportNotice] = useState("");
@@ -1772,6 +1776,8 @@ function HomeScreen({ projects, refresh, userEmail = "", signOut, remoteError = 
   const [dragOverWorkspace, setDragOverWorkspace] = useState("");
   const [dragOverRoot, setDragOverRoot] = useState(false);
   const [dragOverOut, setDragOverOut] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileInitial = userName.trim().charAt(0).toUpperCase() || userEmail.trim().charAt(0).toUpperCase() || "U";
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
   const projectsSize = useMemo(() => formatStorageSize(new Blob([JSON.stringify(projects)]).size), [projects]);
@@ -2061,7 +2067,7 @@ function HomeScreen({ projects, refresh, userEmail = "", signOut, remoteError = 
     </header>
     <section className="home-content">
       <div className="home-intro">
-        <div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Persistent architecture diagrams, synced to your workspace.</p>{remoteError && <p className="import-notice sync-error">{remoteError}</p>}{importNotice && <p className="import-notice">{importNotice}</p>}</div>
+        <div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Persistent architecture diagrams, synced to your workspace.</p>{importNotice && <p className="import-notice">{importNotice}</p>}</div>
         <span className="project-count"><strong>{projects.length}/25</strong> projects <span className="project-storage-size">({projectsSize})</span></span>
       </div>
       {selectedProjects.length > 0 && <div className="project-selection-bar" role="status">
@@ -2287,8 +2293,12 @@ function Editor({ project, syncProjectToRemote }: { project: Project; syncProjec
     else panel?.appendChild(host);
     layerRoot.current = createRoot(host);
     return () => {
-      layerRoot.current?.unmount();
-      host.remove();
+      const root = layerRoot.current;
+      layerRoot.current = null;
+      window.queueMicrotask(() => {
+        root?.unmount();
+        host.remove();
+      });
     };
   }, []);
   useEffect(() => {
