@@ -1379,13 +1379,7 @@ function App() {
       workspaceId: readWorkspaces().membership[project.id] ?? null,
     });
   }, [getAccessToken, user]);
-  useEffect(() => {
-    if (!isLoading && (window.location.pathname === "/login" || window.location.pathname === "/signup")) {
-      void (window.location.pathname === "/signup"
-        ? signUp({ state: { returnTo: "/" } })
-        : signIn({ state: { returnTo: "/" } }));
-    }
-  }, [isLoading, signIn, signUp]);
+
   useEffect(() => {
     if (isLoading) return;
     if (!user) {
