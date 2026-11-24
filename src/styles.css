@@ -172,6 +172,8 @@ button {
 .top-actions .quick-png-button { color: #176b7d; background: #edf7f8; border-color: #b9dce1; font-weight: 700; }
 .top-actions .quick-png-button:hover { background: #dff1f3; border-color: #b9dce1; }
 .skill-button { white-space: nowrap; }
+.root-entry { display: grid; place-items: center; width: 100%; min-height: 100vh; background: #f7faf9; }
+.root-entry h1 { margin: 0; color: #17313d; font-size: clamp(28px, 4vw, 48px); letter-spacing: -1.8px; }
 .auth-loading { display: grid; place-items: center; width: 100%; height: 100vh; color: #55727a; background: #f5f7f7; font-size: 16px; text-align: center; }
 .auth-loading span { display: block; }
 .auth-shell { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(420px, .9fr); width: 100%; min-height: 100vh; background: #f7faf9; }

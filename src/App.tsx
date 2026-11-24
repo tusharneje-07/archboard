@@ -1363,7 +1363,7 @@ function App() {
   const startAuth = (mode: "sign-in" | "sign-up" = "sign-in") => {
     const currentPath = window.location.pathname;
     const returnTo = currentPath === '/callback'
-      ? '/'
+      ? '/auth'
       : `${currentPath}${window.location.search}${window.location.hash}`;
     sessionStorage.setItem("archboard-post-auth-return", returnTo);
     if (profileHash) sessionStorage.setItem("archboard-profile-hash", profileHash);
@@ -1398,6 +1398,11 @@ function App() {
   }, [getAccessToken, user]);
 
   useEffect(() => {
+    if (!isLoading && user && profileHash && (isRoot || isAuth || (profileId && profileId !== profileHash))) {
+      window.history.replaceState({}, '', `/${profileHash}`);
+      setPath(`/${profileHash}`);
+      return;
+    }
     if (!isLoading && user && profileHash && profileId && profileId !== profileHash) {
       window.history.replaceState({}, '', `/${profileHash}`);
       setPath(`/${profileHash}`);
@@ -1482,7 +1487,9 @@ function App() {
     : legacyProjectId;
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
   const profileId = !hashedProjectRoute ? path.match(/^\/([a-f0-9]{32})\/?$/)?.[1] : undefined;
-  const isHome = (profileId != null || (!projectId && !presentationId && !hashedProjectRoute && !/^\/view-archboard-dig\/?$/.test(path)));
+  const isAuth = path === '/auth';
+  const isRoot = path === '/';
+  const isHome = (profileId != null || (!projectId && !presentationId && !hashedProjectRoute && !isAuth && !isRoot && !/^\/view-archboard-dig\/?$/.test(path)));
   useEffect(() => {
     if (isHome) {
       closeActiveProject();
@@ -1514,7 +1521,10 @@ function App() {
     return <div className="auth-loading"><span>Checking Your Workspace...</span></div>;
   }
   if (!user) {
-    if (isHome) {
+    if (isRoot) {
+      return <main className="root-entry"><h1>Archboard Diagram Editor</h1></main>;
+    }
+    if (isAuth || isHome) {
       return <main className="auth-shell"><section className="auth-showcase" aria-hidden="true"><div className="auth-showcase-grid" /><BrandMark /><div className="auth-showcase-copy"><span>WORKSPACE · 25 PROJECTS</span><h2>Shape systems<br />clearly.</h2><p>Build architecture diagrams, keep every change synced, and<br />share the result in any format.</p></div></section><section className="auth-card" aria-labelledby="auth-title"><div className="auth-mobile-brand"><BrandMark /></div><h1 id="auth-title">Welcome to Archboard</h1><p>Sign in to access your diagrams and keep every project backed up.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}><span>Try it out</span><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 10h10M10 6l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg></button></div></section></main>;
     }
     return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Sign in</button></div></section></main>;

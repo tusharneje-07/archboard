@@ -24,7 +24,7 @@ createRoot(document.getElementById('root')!).render(
         sessionStorage.removeItem('archboard-post-auth-return')
         const safeReturn = returnTo.startsWith('/') && !returnTo.startsWith('//') && returnTo !== '/callback'
           ? returnTo
-          : '/'
+          : '/auth'
         const callbackHash = sessionStorage.getItem('archboard-profile-hash')
         const postAuthPath = callbackHash ? `/${callbackHash}` : safeReturn
         sessionStorage.removeItem('archboard-profile-hash')
