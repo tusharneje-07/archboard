@@ -1481,11 +1481,13 @@ function App() {
   const legacyProjectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1] ?? null;
   const hashedProjectRoute = path.match(/^\/([a-f0-9]{32})\/projects\/([^/]+)\/?$/);
   const projectId = hashedProjectRoute
-    ? findProjectIdByRouteHash(hashedProjectRoute[2])
+    ? (profileHash && hashedProjectRoute[1] === profileHash
+      ? findProjectIdByRouteHash(hashedProjectRoute[2])
+      : null)
     : legacyProjectId;
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
-  const profileId = path.match(/^\/([a-f0-9]{32})\/?$/)?.[1];
-  const isHome = !projectId && !presentationId && !profileId && !/^\/view-archboard-dig\/?$/.test(path);
+  const profileId = !hashedProjectRoute ? path.match(/^\/([a-f0-9]{32})\/?$/)?.[1] : undefined;
+  const isHome = !projectId && !presentationId && !hashedProjectRoute && !profileId && !/^\/view-archboard-dig\/?$/.test(path);
   useEffect(() => {
     if (isHome) {
       closeActiveProject();
