@@ -1875,6 +1875,19 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
     setMoveDialog(null);
   };
   useEffect(() => {
+    if (!profileOpen) return;
+    const closeProfile = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".profile-menu-wrap")) setProfileOpen(false);
+    };
+    const closeProfileKey = (event: KeyboardEvent) => { if (event.key === "Escape") setProfileOpen(false); };
+    window.addEventListener("mousedown", closeProfile);
+    window.addEventListener("keydown", closeProfileKey);
+    return () => {
+      window.removeEventListener("mousedown", closeProfile);
+      window.removeEventListener("keydown", closeProfileKey);
+    };
+  }, [profileOpen]);
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (dialog || moveDialog) return;
       const target = event.target;
@@ -2058,10 +2071,17 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
     <header className="home-header">
       <BrandMark />
       <div className="home-actions">
-        {userEmail && <button className="home-account" onClick={() => void signOut?.()} title="Sign out"><span>{userEmail}</span><LogOut size={14} /></button>}
         <button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Import</button>
         <button className="home-multi-import" onClick={() => { setDraftName(""); setDialog({ type: "workspace-create" }); }}><FolderPlus size={16} /> New workspace</button>
         <button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button>
+        <div className="profile-menu-wrap">
+          <button className="profile-circle" onClick={() => setProfileOpen((open) => !open)} title="Open profile" aria-label="Open profile" aria-expanded={profileOpen}>{profileInitial}</button>
+          {profileOpen && <div className="profile-popover" role="dialog" aria-label="Account profile">
+            <div className="profile-popover-head"><span className="profile-avatar">{profileInitial}</span><div><strong>{userName}</strong><span>{userEmail}</span></div></div>
+            <div className="profile-stat"><span>Projects</span><strong>{projects.length} / 25</strong></div>
+            <button className="profile-signout" onClick={() => void signOut?.()}><LogOut size={14} /> Sign out</button>
+          </div>}
+        </div>
         <input ref={importInput} hidden type="file" accept=".json,application/json" multiple onChange={(event) => void importProjects(event)} />
       </div>
     </header>
