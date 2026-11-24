@@ -1366,6 +1366,7 @@ function App() {
   const [loadedProject, setLoadedProject] = useState<Project | null>(null);
   const [remoteReady, setRemoteReady] = useState(false);
   const [remoteError, setRemoteError] = useState("");
+  const [authTimedOut, setAuthTimedOut] = useState(false);
   const syncProjectToRemote = useCallback(async (project: Project) => {
     if (!user) return;
     await saveRemoteProject(getAccessToken, {
@@ -1379,6 +1380,12 @@ function App() {
       workspaceId: readWorkspaces().membership[project.id] ?? null,
     });
   }, [getAccessToken, user]);
+
+  useEffect(() => {
+    if (!isLoading) { setAuthTimedOut(false); return; }
+    const timeout = window.setTimeout(() => setAuthTimedOut(true), 12_000);
+    return () => window.clearTimeout(timeout);
+  }, [isLoading]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -1469,7 +1476,10 @@ function App() {
     const project = readProject(presentationId);
     return project ? <ReactFlowProvider><PresentationView project={project} /></ReactFlowProvider> : <div className="presentation-missing">Project not found.</div>;
   }
-  if (isLoading) return <div className="auth-loading"><BrandMark /><span>Checking your workspace…</span></div>;
+  if (isLoading) {
+    if (authTimedOut) return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Login is taking too long</h1><p>The callback may not have completed. Retry sign-in or clear this browser session and try again.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Retry sign-in</button><button onClick={() => { for (let index = sessionStorage.length - 1; index >= 0; index -= 1) { const key = sessionStorage.key(index); if (key?.startsWith("workos") || key?.includes("authkit") || key === "archboard-post-auth-return") sessionStorage.removeItem(key); } window.location.replace("/"); }}>Reset login state</button></div></section></main>;
+    return <div className="auth-loading"><BrandMark /><span>Checking your workspace…</span></div>;
+  }
   if (!user) {
     if (isHome) {
       return <main className="auth-shell"><section className="auth-showcase" aria-hidden="true"><BrandMark /><div className="auth-showcase-grid" /><div className="auth-showcase-copy"><span>Workspace · 25 projects</span><h2>Shape systems clearly.</h2><p>Build architecture diagrams, keep every change synced, and share the result in any format.</p></div><div className="auth-preview"><div className="auth-preview-node auth-preview-client">Client</div><div className="auth-preview-line auth-preview-line-one" /><div className="auth-preview-node auth-preview-server">Server</div><div className="auth-preview-line auth-preview-line-two" /><div className="auth-preview-node auth-preview-database">Database</div></div></section><section className="auth-card" aria-labelledby="auth-title"><div className="auth-mobile-brand"><BrandMark /></div><span className="eyebrow">Secure workspace</span><h1 id="auth-title">Welcome to Archboard</h1><p>Sign in to access your diagrams and keep every project backed up.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}><span>Sign in</span><span aria-hidden="true">→</span></button><button onClick={() => startAuth("sign-up")}>Create account</button></div><small className="auth-footnote">Protected by WorkOS · 25 free projects per account</small></section></main>;
