@@ -1389,6 +1389,11 @@ function App() {
   }, [getAccessToken, user]);
 
   useEffect(() => {
+    if (!isLoading && user && profileHash && profileId && profileId !== profileHash) {
+      window.history.replaceState({}, '', `/${profileHash}`);
+      setPath(`/${profileHash}`);
+      return;
+    }
     if (!isLoading && user && profileHash && window.location.pathname !== `/${profileHash}` && !window.location.pathname.startsWith('/project/') && !window.location.pathname.startsWith('/present/')) {
       window.history.replaceState({}, '', `/${profileHash}`);
       setPath(`/${profileHash}`);
@@ -1467,7 +1472,7 @@ function App() {
   const projectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1];
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
   const profileId = path.match(/^\/([a-f0-9]{32})\/?$/)?.[1];
-  const isHome = !projectId && !presentationId && !profileId && !/^\/view-archboard-dig\/?$/.test(path);
+  const isHome = !projectId && !presentationId && !/^\/view-archboard-dig\/?$/.test(path);
   useEffect(() => {
     if (isHome) {
       closeActiveProject();
