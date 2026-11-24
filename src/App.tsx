@@ -1350,6 +1350,13 @@ function inferIconCategory(identifier: string): IconCategory {
 
 function App() {
   const { isLoading, user, signIn, signUp, signOut, getAccessToken } = useAuth();
+  const startAuth = (mode: "sign-in" | "sign-up" = "sign-in") => {
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    sessionStorage.setItem("archboard-post-auth-return", returnTo);
+    void (mode === "sign-up"
+      ? signUp({ state: { returnTo } })
+      : signIn({ state: { returnTo } }));
+  };
   const [path, setPath] = useState(window.location.pathname);
   const [hash, setHash] = useState(window.location.hash);
   const [projects, setProjects] = useState<ProjectSummary[]>(() => {
@@ -1374,7 +1381,9 @@ function App() {
   }, [getAccessToken, user]);
   useEffect(() => {
     if (!isLoading && (window.location.pathname === "/login" || window.location.pathname === "/signup")) {
-      void (window.location.pathname === "/signup" ? signUp : signIn)();
+      void (window.location.pathname === "/signup"
+        ? signUp({ state: { returnTo: "/" } })
+        : signIn({ state: { returnTo: "/" } }));
     }
   }, [isLoading, signIn, signUp]);
   useEffect(() => {
@@ -1469,9 +1478,9 @@ function App() {
   if (isLoading) return <div className="auth-loading"><BrandMark /><span>Checking your workspace…</span></div>;
   if (!user) {
     if (isHome) {
-      return <main className="auth-shell"><section className="auth-showcase" aria-hidden="true"><BrandMark /><div className="auth-showcase-grid" /><div className="auth-showcase-copy"><span>Workspace · 25 projects</span><h2>Shape systems clearly.</h2><p>Build architecture diagrams, keep every change synced, and share the result in any format.</p></div><div className="auth-preview"><div className="auth-preview-node auth-preview-client">Client</div><div className="auth-preview-line auth-preview-line-one" /><div className="auth-preview-node auth-preview-server">Server</div><div className="auth-preview-line auth-preview-line-two" /><div className="auth-preview-node auth-preview-database">Database</div></div></section><section className="auth-card" aria-labelledby="auth-title"><div className="auth-mobile-brand"><BrandMark /></div><span className="eyebrow">Secure workspace</span><h1 id="auth-title">Welcome to Archboard</h1><p>Sign in to access your diagrams and keep every project backed up.</p><div className="auth-actions"><button className="primary" onClick={() => void signIn()}><span>Sign in</span><span aria-hidden="true">→</span></button><button onClick={() => void signUp()}>Create account</button></div><small className="auth-footnote">Protected by WorkOS · 25 free projects per account</small></section></main>;
+      return <main className="auth-shell"><section className="auth-showcase" aria-hidden="true"><BrandMark /><div className="auth-showcase-grid" /><div className="auth-showcase-copy"><span>Workspace · 25 projects</span><h2>Shape systems clearly.</h2><p>Build architecture diagrams, keep every change synced, and share the result in any format.</p></div><div className="auth-preview"><div className="auth-preview-node auth-preview-client">Client</div><div className="auth-preview-line auth-preview-line-one" /><div className="auth-preview-node auth-preview-server">Server</div><div className="auth-preview-line auth-preview-line-two" /><div className="auth-preview-node auth-preview-database">Database</div></div></section><section className="auth-card" aria-labelledby="auth-title"><div className="auth-mobile-brand"><BrandMark /></div><span className="eyebrow">Secure workspace</span><h1 id="auth-title">Welcome to Archboard</h1><p>Sign in to access your diagrams and keep every project backed up.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}><span>Sign in</span><span aria-hidden="true">→</span></button><button onClick={() => startAuth("sign-up")}>Create account</button></div><small className="auth-footnote">Protected by WorkOS · 25 free projects per account</small></section></main>;
     }
-    return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => void signIn()}>Sign in</button></div></section></main>;
+    return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Sign in</button></div></section></main>;
   }
   if (isHome) return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} userEmail={user.email ?? ""} signOut={signOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
   if (!remoteReady) return <div className="auth-loading"><BrandMark /><span>Loading your workspace…</span></div>;
