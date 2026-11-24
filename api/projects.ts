@@ -174,6 +174,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   catch (error) { const status = (error as { status?: number }).status ?? 401; return sendJson(res, status, { ok: false, error: error instanceof Error ? error.message : "Authentication failed." }); }
 
   try {
+    const pathname = (req.url ?? "").split("?")[0];
+    const profileMatch = pathname.match(/^\/([a-f0-9]{32})\/profile\/?$/);
+    if (profileMatch && req.method === "GET") {
+      const hash = profileMatch[1];
+      const crypto = await import("node:crypto");
+      const email = auth.email?.trim().toLowerCase() ?? "";
+      if (!email || crypto.createHash("md5").update(email).digest("hex") !== hash) {
+        return sendJson(res, 403, { ok: false, error: "Profile hash does not belong to the authenticated user." });
+      }
+      const countRow = db.prepare("SELECT COUNT(*) AS count FROM projects WHERE user_id = ?").get(auth.userId) as { count: number };
+      return sendJson(res, 200, {
+        ok: true,
+        profile: {
+          id: auth.userId,
+          name: email.split("@")[0],
+          email,
+          projectCount: countRow.count,
+          projectLimit: FREE_PROJECT_LIMIT,
+          profileUrl: `/${hash}`,
+          profileApiUrl: `/${hash}/profile`,
+        },
+      });
+    }
     if (req.method === "GET") {
       const countRow = db.prepare("SELECT COUNT(*) AS count FROM projects WHERE user_id = ?").get(auth.userId) as { count: number };
       return sendJson(res, 200, { ok: true, limit: FREE_PROJECT_LIMIT, count: countRow.count, projects: listProjects(auth.userId) });

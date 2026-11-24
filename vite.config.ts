@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import viewArchboardDig from './api/view-archboard-dig'
 import projectsApi from './api/projects'
+import profileApi from './api/profile'
 
 function viewArchboardDigDevApi(): Plugin {
   return {
@@ -24,6 +25,22 @@ function viewArchboardDigDevApi(): Plugin {
   }
 }
 
+function profileDevApi(): Plugin {
+  return {
+    name: 'profile-dev-api',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const pathname = (req.url ?? '').split('?')[0]
+        if (!/^\/([a-f0-9]{32})\/profile\/?$/.test(pathname)) return next()
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        await profileApi(req as never, res as never)
+      })
+    },
+  }
+}
+
 function projectsDevApi(): Plugin {
   return {
     name: 'projects-dev-api',
@@ -41,6 +58,6 @@ function projectsDevApi(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), viewArchboardDigDevApi(), projectsDevApi()],
+  plugins: [react(), viewArchboardDigDevApi(), projectsDevApi(), profileDevApi()],
   build: { sourcemap: true },
 })

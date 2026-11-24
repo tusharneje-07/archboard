@@ -25,7 +25,10 @@ createRoot(document.getElementById('root')!).render(
         const safeReturn = returnTo.startsWith('/') && !returnTo.startsWith('//') && returnTo !== '/callback'
           ? returnTo
           : '/'
-        window.history.replaceState({}, '', safeReturn)
+        const callbackHash = sessionStorage.getItem('archboard-profile-hash')
+        const postAuthPath = callbackHash ? `/${callbackHash}` : safeReturn
+        sessionStorage.removeItem('archboard-profile-hash')
+        window.history.replaceState({}, '', postAuthPath)
         window.dispatchEvent(new PopStateEvent('popstate'))
       }}
       onRefreshFailure={({ signIn }) => signIn()}

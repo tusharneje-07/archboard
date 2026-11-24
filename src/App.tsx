@@ -33,7 +33,8 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useAuth } from "@workos-inc/authkit-react";
-import { deleteRemoteProjects, listRemoteProjects, saveRemoteProject, type RemoteProject } from "./project-api";
+import md5 from "md5";
+import { authenticatedProjectRequest, deleteRemoteProjects, listRemoteProjects, saveRemoteProject, type RemoteProject } from "./project-api";
 import {
   AlignCenter,
   AlignLeft,
@@ -1356,6 +1357,7 @@ function App() {
       ? '/'
       : `${currentPath}${window.location.search}${window.location.hash}`;
     sessionStorage.setItem("archboard-post-auth-return", returnTo);
+    if (profileHash) sessionStorage.setItem("archboard-profile-hash", profileHash);
     void (mode === "sign-up"
       ? signUp({ state: { returnTo } })
       : signIn({ state: { returnTo } }));
@@ -1367,6 +1369,8 @@ function App() {
     return readProjectSummaries();
   });
   const [loadedProject, setLoadedProject] = useState<Project | null>(null);
+  const normalizedEmail = typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
+  const profileHash = normalizedEmail ? md5(normalizedEmail) : "";
   const [remoteReady, setRemoteReady] = useState(false);
   const [remoteError, setRemoteError] = useState("");
   const [authTimedOut, setAuthTimedOut] = useState(false);
@@ -1384,6 +1388,12 @@ function App() {
     });
   }, [getAccessToken, user]);
 
+  useEffect(() => {
+    if (!isLoading && user && profileHash && window.location.pathname !== `/${profileHash}` && !window.location.pathname.startsWith('/project/') && !window.location.pathname.startsWith('/present/')) {
+      window.history.replaceState({}, '', `/${profileHash}`);
+      setPath(`/${profileHash}`);
+    }
+  }, [isLoading, user?.id, profileHash]);
   useEffect(() => {
     if (!isLoading) { setAuthTimedOut(false); return; }
     const timeout = window.setTimeout(() => setAuthTimedOut(true), 12_000);
@@ -1456,7 +1466,8 @@ function App() {
   }, []);
   const projectId = path.match(/^\/project\/([^/]+)\/?$/)?.[1];
   const presentationId = path.match(/^\/present\/([^/]+)\/?$/)?.[1];
-  const isHome = !projectId && !presentationId && !/^\/view-archboard-dig\/?$/.test(path);
+  const profileId = path.match(/^\/([a-f0-9]{32})\/?$/)?.[1];
+  const isHome = !projectId && !presentationId && !profileId && !/^\/view-archboard-dig\/?$/.test(path);
   useEffect(() => {
     if (isHome) {
       closeActiveProject();
@@ -1777,7 +1788,17 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
   const [dragOverRoot, setDragOverRoot] = useState(false);
   const [dragOverOut, setDragOverOut] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileCount, setProfileCount] = useState(projects.length);
   const profileInitial = userName.trim().charAt(0).toUpperCase() || userEmail.trim().charAt(0).toUpperCase() || "U";
+  const profileHash = md5(userEmail.trim().toLowerCase());
+  useEffect(() => {
+    if (!profileOpen || !profileHash) return;
+    let cancelled = false;
+    void authenticatedProjectRequest<{ ok: true; profile: { projectCount: number } }>(getAccessToken, `/${profileHash}/profile`)
+      .then((response) => { if (!cancelled) setProfileCount(response.profile.projectCount); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [profileOpen, profileHash, getAccessToken]);
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
   const projectsSize = useMemo(() => formatStorageSize(new Blob([JSON.stringify(projects)]).size), [projects]);
@@ -2078,7 +2099,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
           <button className="profile-circle" onClick={() => setProfileOpen((open) => !open)} title="Open profile" aria-label="Open profile" aria-expanded={profileOpen}>{profileInitial}</button>
           {profileOpen && <div className="profile-popover" role="dialog" aria-label="Account profile">
             <div className="profile-popover-head"><span className="profile-avatar">{profileInitial}</span><div><strong>{userName}</strong><span>{userEmail}</span></div></div>
-            <div className="profile-stat"><span>Projects</span><strong>{projects.length} / 25</strong></div>
+            <div className="profile-stat"><span>Projects</span><strong>{profileCount} / 25</strong></div>
             <button className="profile-signout" onClick={() => void signOut?.()}><LogOut size={14} /> Sign out</button>
           </div>}
         </div>

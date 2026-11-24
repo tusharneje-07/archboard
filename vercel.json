@@ -8,6 +8,9 @@
     },
     "api/projects.ts": {
       "includeFiles": "data/*.sqlite"
+    },
+    "api/profile.ts": {
+      "includeFiles": "data/*.sqlite"
     }
   },
   "rewrites": [
@@ -22,6 +25,14 @@
     {
       "source": "/api/projects",
       "destination": "/api/projects"
+    },
+    {
+      "source": "/([a-f0-9]{32})/profile",
+      "destination": "/api/profile"
+    },
+    {
+      "source": "/([a-f0-9]{32})/profile/",
+      "destination": "/api/profile"
     },
     {
       "source": "/((?!api/).*)",
