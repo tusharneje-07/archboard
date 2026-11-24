@@ -577,7 +577,7 @@ function normalizeLoadedNodes(input: Node<NodeData>[]): Node<NodeData>[] {
 
 function loadSavedDiagram() {
   try {
-    const saved = JSON.parse(localStorage.getItem("archboard-diagram") || "null");
+    const saved = JSON.parse(localStorage.getItem(scopedStorageKey(legacyDiagramKey)) || "null");
     if (!saved?.nodes || !saved?.edges) return { nodes: initialNodes, edges: initialEdges };
     return { nodes: normalizeLoadedNodes(normalizeDiagramNodes(saved.nodes)), edges: normalizeDiagramEdges(saved.edges) };
   } catch {
@@ -586,6 +586,30 @@ function loadSavedDiagram() {
 }
 const projectsKey = "archboard-projects";
 const workspacesKey = "archboard-workspaces";
+const activeProjectKey = "archboard-active-project";
+const legacyDiagramKey = "archboard-diagram";
+const seedVersionKey = "archboard-seed-version";
+let projectStorageScope = "anonymous";
+function setProjectStorageScope(userId: string | null) {
+  projectStorageScope = userId ? md5(userId) : "anonymous";
+}
+function scopedStorageKey(key: string) {
+  return `${key}:${projectStorageScope}`;
+}
+function clearProjectStorage(userId: string | null) {
+  if (!userId) return;
+  const scope = md5(userId);
+  [projectsKey, workspacesKey, activeProjectKey, legacyDiagramKey, seedVersionKey].forEach((key) => {
+    localStorage.removeItem(`${key}:${scope}`);
+  });
+  clearLegacySharedProjectStorage();
+  localStorage.removeItem(`archboard-migrated-user:${userId}`);
+}
+function clearLegacySharedProjectStorage() {
+  [projectsKey, workspacesKey, activeProjectKey, legacyDiagramKey, seedVersionKey].forEach((key) => {
+    localStorage.removeItem(key);
+  });
+}
 type ExportFormat = "png" | "svg" | "jpg" | "json";
 type ExportSettings = { format: ExportFormat; transparent: boolean; quality: number; dpi: number };
 const exportSettingsKey = "archboard-export-settings";
@@ -605,8 +629,6 @@ function readExportSettings(): ExportSettings {
     return defaultExportSettings;
   }
 }
-const activeProjectKey = "archboard-active-project";
-const legacyDiagramKey = "archboard-diagram";
 const inspectorTabKey = "archboard-inspector-tab";
 const inspectorScrollKey = "archboard-inspector-scroll";
 type InspectorTab = "text" | "appearance" | "themes" | "connector";
@@ -703,12 +725,12 @@ function migrateLegacySummary(summary: LegacyProjectSummary): ProjectSummary | n
   }
 }
 function writeProjectSummaries(projects: ProjectSummary[]) {
-  localStorage.setItem(projectsKey, JSON.stringify(projects));
+  localStorage.setItem(scopedStorageKey(projectsKey), JSON.stringify(projects));
 }
-function readProjectSummaries(createDefault = true): ProjectSummary[] {
+function readProjectSummaries(createDefault = false): ProjectSummary[] {
   let saved: unknown = null;
   try {
-    saved = JSON.parse(localStorage.getItem(projectsKey) || "null");
+    saved = JSON.parse(localStorage.getItem(scopedStorageKey(projectsKey)) || "null");
   } catch { /* Recover from the legacy project data below. */ }
   if (Array.isArray(saved)) {
     const summaries: ProjectSummary[] = [];
@@ -725,29 +747,29 @@ function readProjectSummaries(createDefault = true): ProjectSummary[] {
       } else changed = true;
     }
     if (changed) writeProjectSummaries(summaries);
-    localStorage.removeItem(legacyDiagramKey);
+    localStorage.removeItem(scopedStorageKey(legacyDiagramKey));
     return summaries;
   }
-  if (!createDefault && !localStorage.getItem(legacyDiagramKey)) return [];
+  if (!createDefault && !localStorage.getItem(scopedStorageKey(legacyDiagramKey))) return [];
   const diagram = loadSavedDiagram(), now = Date.now();
   const project: Project = { id: `project-${now}`, name: sampleProjectName, ...diagram, createdAt: now, updatedAt: now };
   const summaries = [compressProject(project)];
   writeProjectSummaries(summaries);
-  localStorage.removeItem(legacyDiagramKey);
+  localStorage.removeItem(scopedStorageKey(legacyDiagramKey));
   return summaries;
 }
 function readActiveProject(): ActiveProjectRecord | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(activeProjectKey) || "null") as ActiveProjectRecord | null;
+    const saved = JSON.parse(localStorage.getItem(scopedStorageKey(activeProjectKey)) || "null") as ActiveProjectRecord | null;
     if (saved?.project && typeof saved.project.id === "string" && Array.isArray(saved.project.nodes) && Array.isArray(saved.project.edges)) return saved;
   } catch { /* Treat invalid active data as absent. */ }
   return null;
 }
 function writeActiveProject(project: Project) {
-  localStorage.setItem(activeProjectKey, JSON.stringify({ project, savedAt: Date.now() } satisfies ActiveProjectRecord));
+  localStorage.setItem(scopedStorageKey(activeProjectKey), JSON.stringify({ project, savedAt: Date.now() } satisfies ActiveProjectRecord));
 }
 function clearActiveProject() {
-  localStorage.removeItem(activeProjectKey);
+  localStorage.removeItem(scopedStorageKey(activeProjectKey));
 }
 function decompressProject(summary: ProjectSummary): Project | null {
   try {
@@ -766,7 +788,6 @@ function decompressProject(summary: ProjectSummary): Project | null {
     return null;
   }
 }
-const seedVersionKey = "archboard-seed-version";
 const seedVersion = "3";
 const sampleProjectName = "Client-Server Architecture";
 const legacySeedName = "Untitled architecture";
@@ -787,7 +808,7 @@ function isUneditedStarter(project: Project): boolean {
 }
 /** Swaps untouched starter diagrams from earlier releases for the current sample, so existing installs see it too. */
 function migrateLegacySeedProject() {
-  if (localStorage.getItem(seedVersionKey) === seedVersion) return;
+  if (localStorage.getItem(scopedStorageKey(seedVersionKey)) === seedVersion) return;
   const active = readActiveProject();
   if (active && isUneditedStarter(active.project)) {
     writeActiveProject({ ...active.project, name: sampleProjectName, nodes: initialNodes, edges: initialEdges, updatedAt: Date.now() });
@@ -801,12 +822,12 @@ function migrateLegacySeedProject() {
     return compressProject({ ...project, name: sampleProjectName, nodes: initialNodes, edges: initialEdges, updatedAt: Date.now() });
   });
   if (changed) writeProjectSummaries(summaries);
-  localStorage.setItem(seedVersionKey, seedVersion);
+  localStorage.setItem(scopedStorageKey(seedVersionKey), seedVersion);
 }
 function readProject(id: string): Project | null {
   const active = readActiveProject();
   if (active?.project.id === id) return active.project;
-  const summary = readProjectSummaries().find((project) => project.id === id);
+  const summary = readProjectSummaries(false).find((project) => project.id === id);
   return summary ? decompressProject(summary) : null;
 }
 function openProject(id: string): Project | null {
@@ -892,7 +913,7 @@ function isWorkspaceFolder(value: unknown): value is WorkspaceFolder {
 function readWorkspaces(): WorkspaceState {
   let saved: unknown = null;
   try {
-    saved = JSON.parse(localStorage.getItem(workspacesKey) || "null");
+    saved = JSON.parse(localStorage.getItem(scopedStorageKey(workspacesKey)) || "null");
   } catch { /* Treat invalid workspace data as absent. */ }
   if (!saved || typeof saved !== "object") return { folders: [], membership: {} };
   const folders = Array.isArray((saved as WorkspaceState).folders)
@@ -909,7 +930,7 @@ function readWorkspaces(): WorkspaceState {
   return { folders, membership };
 }
 function writeWorkspaces(state: WorkspaceState) {
-  localStorage.setItem(workspacesKey, JSON.stringify(state));
+  localStorage.setItem(scopedStorageKey(workspacesKey), JSON.stringify(state));
 }
 function createWorkspaceRecord(name: string) {
   const state = readWorkspaces();
@@ -1376,8 +1397,8 @@ function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [hash, setHash] = useState(window.location.hash);
   const [projects, setProjects] = useState<ProjectSummary[]>(() => {
-    migrateLegacySeedProject();
-    return readProjectSummaries();
+    clearLegacySharedProjectStorage();
+    return [];
   });
   const [loadedProject, setLoadedProject] = useState<Project | null>(null);
   const normalizedEmail = typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
@@ -1385,6 +1406,14 @@ function App() {
   const [remoteReady, setRemoteReady] = useState(false);
   const [remoteError, setRemoteError] = useState("");
   const [authTimedOut, setAuthTimedOut] = useState(false);
+  const handleSignOut = useCallback(async () => {
+    clearProjectStorage(user?.id ?? null);
+    setProjectStorageScope(null);
+    setProjects([]);
+    setLoadedProject(null);
+    setRemoteReady(false);
+    await signOut();
+  }, [signOut, user?.id]);
   const syncProjectToRemote = useCallback(async (project: Project) => {
     if (!user) return;
     await saveRemoteProject(getAccessToken, {
@@ -1417,10 +1446,21 @@ function App() {
   }, [isLoading]);
 
   useEffect(() => {
+    setProjectStorageScope(user?.id ?? null);
+    if (!user) {
+      setProjects([]);
+      setLoadedProject(null);
+      setRemoteReady(false);
+    } else {
+      setProjects([]);
+      setLoadedProject(null);
+      setRemoteReady(false);
+    }
+  }, [user?.id]);
+  useEffect(() => {
     if (isLoading) return;
     if (!user) {
       setRemoteReady(false);
-      setProjects(readProjectSummaries());
       return;
     }
     let cancelled = false;
@@ -1430,25 +1470,6 @@ function App() {
     ]);
     void (async () => {
       try {
-        const migrationKey = `archboard-migrated-user:${user.id}`;
-        const cached = readProjectSummaries(false);
-        if (cached.length && !localStorage.getItem(migrationKey)) {
-          for (const summary of cached) {
-            const project = decompressProject(summary);
-            if (!project) continue;
-            await deadline(saveRemoteProject(getAccessToken, {
-              id: project.id,
-              name: project.name,
-              createdAt: project.createdAt,
-              updatedAt: project.updatedAt,
-              presentation: project.presentation,
-              nodeCount: project.nodes.length,
-              compression: compressProject(project).compression,
-              workspaceId: readWorkspaces().membership[project.id] ?? null,
-            }));
-          }
-          localStorage.setItem(migrationKey, "true");
-        }
         const remote = await deadline(listRemoteProjects(getAccessToken));
         if (cancelled) return;
         const summaries = remote.projects.map((project): ProjectSummary => ({
@@ -1467,14 +1488,14 @@ function App() {
       } catch (error) {
         if (cancelled) return;
         setRemoteError("");
-        setProjects(readProjectSummaries());
+        setProjects(readProjectSummaries(false));
         setRemoteReady(true);
       }
     })();
     return () => { cancelled = true; };
   }, [isLoading, user?.id, getAccessToken, signIn]);
   useEffect(() => {
-    const onPopState = () => { setPath(window.location.pathname); setHash(window.location.hash); setProjects(readProjectSummaries()); };
+    const onPopState = () => { setPath(window.location.pathname); setHash(window.location.hash); setProjects(readProjectSummaries(false)); };
     const onHashChange = () => setHash(window.location.hash);
     window.addEventListener("popstate", onPopState);
     window.addEventListener("hashchange", onHashChange);
@@ -1496,7 +1517,7 @@ function App() {
     if (isHome) {
       closeActiveProject();
       setLoadedProject(null);
-      setProjects(readProjectSummaries());
+      setProjects(readProjectSummaries(false));
       return;
     }
     if (!projectId) {
@@ -1524,7 +1545,7 @@ function App() {
   }
   if (!user) {
     if (isRoot) {
-      return <main className="root-entry"><h1>Archboard Diagram Editor</h1></main>;
+      return <PremiumAuthScreen onStart={() => startAuth("sign-in")} />;
     }
      if (isAuth || isHome) {
        return <PremiumAuthScreen onStart={() => startAuth("sign-in")} />;
@@ -1534,7 +1555,7 @@ function App() {
   if (isHome) {
     const displayName = [user.firstName, user.lastName].filter((value): value is string => !!value).join(" ").trim()
       || (typeof user.email === "string" ? user.email.split("@")[0] : "Archboard user");
-    return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} userName={displayName} userEmail={user.email ?? ""} signOut={signOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
+    return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries(false))} userName={displayName} userEmail={user.email ?? ""} signOut={handleSignOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
   }
   // Remote sync runs in the background. Cached projects render immediately,
   // so a slow or unavailable SQLite API cannot block an authenticated user.
