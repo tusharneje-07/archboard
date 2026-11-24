@@ -32,6 +32,8 @@ import {
   type ReactFlowInstance,
   type Viewport,
 } from "@xyflow/react";
+import { useAuth } from "@workos-inc/authkit-react";
+import { deleteRemoteProjects, listRemoteProjects, saveRemoteProject, type RemoteProject } from "./project-api";
 import {
   AlignCenter,
   AlignLeft,
@@ -64,6 +66,7 @@ import {
   Home,
   Image as ImageIcon,
   Link2,
+  LogOut,
   Maximize2,
   Minus,
   MousePointer2,
@@ -1338,6 +1341,7 @@ function inferIconCategory(identifier: string): IconCategory {
 }
 
 function App() {
+  const { isLoading, user, signIn, signUp, signOut, getAccessToken } = useAuth();
   const [path, setPath] = useState(window.location.pathname);
   const [hash, setHash] = useState(window.location.hash);
   const [projects, setProjects] = useState<ProjectSummary[]>(() => {
@@ -1345,6 +1349,79 @@ function App() {
     return readProjectSummaries();
   });
   const [loadedProject, setLoadedProject] = useState<Project | null>(null);
+  const [remoteReady, setRemoteReady] = useState(false);
+  const [remoteError, setRemoteError] = useState("");
+  const syncProjectToRemote = useCallback(async (project: Project) => {
+    if (!user) return;
+    await saveRemoteProject(getAccessToken, {
+      id: project.id,
+      name: project.name,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      presentation: project.presentation,
+      nodeCount: project.nodes.length,
+      compression: compressProject(project).compression,
+      workspaceId: readWorkspaces().membership[project.id] ?? null,
+    });
+  }, [getAccessToken, user]);
+  useEffect(() => {
+    if (!isLoading && (window.location.pathname === "/login" || window.location.pathname === "/signup")) {
+      void (window.location.pathname === "/signup" ? signUp : signIn)();
+    }
+  }, [isLoading, signIn, signUp]);
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user) {
+      setRemoteReady(false);
+      setProjects(readProjectSummaries());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const migrationKey = `archboard-migrated-user:${user.id}`;
+        const cached = readProjectSummaries(false);
+        if (cached.length && !localStorage.getItem(migrationKey)) {
+          for (const summary of cached) {
+            const project = decompressProject(summary);
+            if (!project) continue;
+            await saveRemoteProject(getAccessToken, {
+              id: project.id,
+              name: project.name,
+              createdAt: project.createdAt,
+              updatedAt: project.updatedAt,
+              presentation: project.presentation,
+              nodeCount: project.nodes.length,
+              compression: compressProject(project).compression,
+              workspaceId: readWorkspaces().membership[project.id] ?? null,
+            });
+          }
+          localStorage.setItem(migrationKey, "true");
+        }
+        const remote = await listRemoteProjects(getAccessToken);
+        if (cancelled) return;
+        const summaries = remote.projects.map((project): ProjectSummary => ({
+          id: project.id,
+          name: project.name,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+          presentation: project.presentation,
+          nodeCount: project.nodeCount,
+          compression: project.compression,
+        }));
+        writeProjectSummaries(summaries);
+        setProjects(summaries);
+        setRemoteError("");
+        setRemoteReady(true);
+      } catch (error) {
+        if (cancelled) return;
+        setRemoteError(error instanceof Error ? error.message : "Could not sync projects.");
+        setProjects(readProjectSummaries());
+        setRemoteReady(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isLoading, user?.id, getAccessToken, signIn]);
   useEffect(() => {
     const onPopState = () => { setPath(window.location.pathname); setHash(window.location.hash); setProjects(readProjectSummaries()); };
     const onHashChange = () => setHash(window.location.hash);
@@ -1381,9 +1458,17 @@ function App() {
     const project = readProject(presentationId);
     return project ? <ReactFlowProvider><PresentationView project={project} /></ReactFlowProvider> : <div className="presentation-missing">Project not found.</div>;
   }
-  if (isHome) return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} />;
+  if (isLoading) return <div className="auth-loading"><BrandMark /><span>Checking your workspace…</span></div>;
+  if (!user) {
+    if (isHome) {
+      return <main className="auth-shell"><section className="auth-showcase" aria-hidden="true"><BrandMark /><div className="auth-showcase-grid" /><div className="auth-showcase-copy"><span>Workspace · 25 projects</span><h2>Shape systems clearly.</h2><p>Build architecture diagrams, keep every change synced, and share the result in any format.</p></div><div className="auth-preview"><div className="auth-preview-node auth-preview-client">Client</div><div className="auth-preview-line auth-preview-line-one" /><div className="auth-preview-node auth-preview-server">Server</div><div className="auth-preview-line auth-preview-line-two" /><div className="auth-preview-node auth-preview-database">Database</div></div></section><section className="auth-card" aria-labelledby="auth-title"><div className="auth-mobile-brand"><BrandMark /></div><span className="eyebrow">Secure workspace</span><h1 id="auth-title">Welcome to Archboard</h1><p>Sign in to access your diagrams and keep every project backed up.</p><div className="auth-actions"><button className="primary" onClick={() => void signIn()}><span>Sign in</span><span aria-hidden="true">→</span></button><button onClick={() => void signUp()}>Create account</button></div><small className="auth-footnote">Protected by WorkOS · 25 free projects per account</small></section></main>;
+    }
+    return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => void signIn()}>Sign in</button></div></section></main>;
+  }
+  if (isHome) return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries())} userEmail={user.email ?? ""} signOut={signOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
+  if (!remoteReady) return <div className="auth-loading"><BrandMark /><span>Loading your workspace…</span></div>;
   if (!loadedProject || loadedProject.id !== projectId) return null;
-  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} /></ReactFlowProvider>;
+  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} syncProjectToRemote={syncProjectToRemote} /></ReactFlowProvider>;
 }
 type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
 function PresentationView({ project, showExit = true, showToolbar = true }: { project: Project; showExit?: boolean; showToolbar?: boolean }) {
@@ -1643,7 +1728,7 @@ function BrandMark({ onClick }: { onClick?: () => void }) {
     ? <button className="brand-mark brand-mark-button" type="button" onClick={onClick} title="Go to home" aria-label="Go to home">{content}</button>
     : <div className="brand-mark">{content}</div>;
 }
-function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh: () => void }) {
+function HomeScreen({ projects, refresh, userEmail = "", signOut, remoteError = "", getAccessToken }: { projects: ProjectSummary[]; refresh: () => void; userEmail?: string; signOut?: () => Promise<void> | void; remoteError?: string; getAccessToken: () => Promise<string | null> }) {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [draftName, setDraftName] = useState("");
   const [importNotice, setImportNotice] = useState("");
@@ -1692,12 +1777,29 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
     setDragOverRoot(false);
     setDragOverOut(false);
   };
+  const syncProjectsToRemote = (ids: string[], workspaceId: string | null) => {
+    for (const id of ids) {
+      const project = readProject(id);
+      if (!project) continue;
+      void saveRemoteProject(getAccessToken, {
+        id: project.id,
+        name: project.name,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        presentation: project.presentation,
+        nodeCount: project.nodes.length,
+        compression: compressProject(project).compression,
+        workspaceId,
+      }).catch((error) => setImportNotice(error instanceof Error ? error.message : "Could not sync workspace membership."));
+    }
+  };
   const dropProjects = (event: React.DragEvent, folderId: string | null) => {
     event.preventDefault();
     event.stopPropagation();
     const ids = draggedProjectIds(event);
     if (ids.length) {
       moveProjectsToWorkspace(ids, folderId);
+      syncProjectsToRemote(ids, folderId);
       syncWorkspaces();
     }
     finishProjectDrag();
@@ -1733,6 +1835,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
       folderId = createWorkspaceRecord(name);
     }
     moveProjectsToWorkspace(moveDialog.projectIds, folderId);
+    syncProjectsToRemote(moveDialog.projectIds, folderId);
     syncWorkspaces();
     setMoveDialog(null);
   };
@@ -1776,13 +1879,39 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
     };
   }, [homeMenu]);
   const createProject = () => {
+    if (projects.length >= 25) { setImportNotice("Free accounts are limited to 25 projects. Delete a project to create another."); return; }
     const id = createProjectRecord();
+    const project = readProject(id);
+    if (project) void saveRemoteProject(getAccessToken, {
+      id: project.id,
+      name: project.name,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      presentation: project.presentation,
+      nodeCount: project.nodes.length,
+      compression: compressProject(project).compression,
+      workspaceId: null,
+    }).catch((error) => setImportNotice(error instanceof Error ? error.message : "Could not save project."));
     refresh();
     navigate(`/project/${id}`);
   };
   const renameProject = (project: ProjectSummary) => { setDraftName(project.name); setDialog({ type: "rename", project }); };
   const duplicateProject = (project: ProjectSummary) => {
-    duplicateProjectRecord(project.id);
+    if (projects.length >= 25) { setImportNotice("Free accounts are limited to 25 projects. Delete a project to duplicate another."); return; }
+    const copyId = duplicateProjectRecord(project.id);
+    if (copyId) {
+      const copy = readProject(copyId);
+      if (copy) void saveRemoteProject(getAccessToken, {
+        id: copy.id,
+        name: copy.name,
+        createdAt: copy.createdAt,
+        updatedAt: copy.updatedAt,
+        presentation: copy.presentation,
+        nodeCount: copy.nodes.length,
+        compression: compressProject(copy).compression,
+        workspaceId: readWorkspaces().membership[copy.id] ?? null,
+      }).catch((error) => setImportNotice(error instanceof Error ? error.message : "Could not duplicate project."));
+    }
     refresh();
     syncWorkspaces();
   };
@@ -1803,8 +1932,28 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
       }
     }
     if (imported.length) {
-      storeProjectRecords(imported);
-      refresh();
+      const saved: Project[] = [];
+      for (const project of imported) {
+        try {
+          await saveRemoteProject(getAccessToken, {
+            id: project.id,
+            name: project.name,
+            createdAt: project.createdAt,
+            updatedAt: project.updatedAt,
+            presentation: project.presentation,
+            nodeCount: project.nodes.length,
+            compression: compressProject(project).compression,
+            workspaceId: null,
+          });
+          saved.push(project);
+        } catch (error) {
+          failures.push(`${project.name}: ${error instanceof Error ? error.message : "Could not save project"}`);
+        }
+      }
+      if (saved.length) {
+        storeProjectRecords(saved);
+        refresh();
+      }
     }
     setImportNotice(`${imported.length} imported${failures.length ? `, ${failures.length} failed` : ""}${failures.length ? ` (${failures.join("; ")})` : "."}`);
     event.target.value = "";
@@ -1816,9 +1965,22 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
       const name = draftName.trim();
       if (!name) return;
       renameProjectRecord(dialog.project.id, name);
+      const renamed = readProject(dialog.project.id);
+      if (renamed) void saveRemoteProject(getAccessToken, {
+        id: renamed.id,
+        name,
+        createdAt: renamed.createdAt,
+        updatedAt: renamed.updatedAt,
+        presentation: renamed.presentation,
+        nodeCount: renamed.nodes.length,
+        compression: compressProject(renamed).compression,
+        workspaceId: readWorkspaces().membership[renamed.id] ?? null,
+      }).catch((error) => setImportNotice(error instanceof Error ? error.message : "Could not rename project."));
     } else if (dialog.type === "delete") {
       const deletedIds = new Set(dialog.projects.map((project) => project.id));
-      deleteProjectRecords([...deletedIds]);
+      const ids = [...deletedIds];
+      deleteProjectRecords(ids);
+      void deleteRemoteProjects(getAccessToken, ids).catch((error) => setImportNotice(error instanceof Error ? error.message : "Could not delete project from storage."));
       setSelectedIds((current) => new Set([...current].filter((id) => !deletedIds.has(id))));
       syncWorkspaces();
     } else if (dialog.type === "workspace-create") {
@@ -1861,6 +2023,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
     <header className="home-header">
       <BrandMark />
       <div className="home-actions">
+        {userEmail && <button className="home-account" onClick={() => void signOut?.()} title="Sign out"><span>{userEmail}</span><LogOut size={14} /></button>}
         <button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Import</button>
         <button className="home-multi-import" onClick={() => { setDraftName(""); setDialog({ type: "workspace-create" }); }}><FolderPlus size={16} /> New workspace</button>
         <button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button>
@@ -1869,8 +2032,8 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
     </header>
     <section className="home-content">
       <div className="home-intro">
-        <div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Local architecture diagrams, ready to pick up where you left off.</p>{importNotice && <p className="import-notice">{importNotice}</p>}</div>
-        <span className="project-count">{projects.length} {projects.length === 1 ? "project" : "projects"} <span className="project-storage-size">({projectsSize})</span></span>
+        <div><span className="eyebrow">Workspace</span><h1>Your projects</h1><p>Persistent architecture diagrams, synced to your workspace.</p>{remoteError && <p className="import-notice sync-error">{remoteError}</p>}{importNotice && <p className="import-notice">{importNotice}</p>}</div>
+        <span className="project-count"><strong>{projects.length}/25</strong> projects <span className="project-storage-size">({projectsSize})</span></span>
       </div>
       {selectedProjects.length > 0 && <div className="project-selection-bar" role="status">
         <strong>{selectedProjects.length} selected</strong>
@@ -1931,7 +2094,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
           <button onClick={() => { renameProject(menuProject); setHomeMenu(null); }}><Pencil size={14} /> Rename</button>
           <button onClick={() => { duplicateProject(menuProject); setHomeMenu(null); }}><Copy size={14} /> Duplicate</button>
           <button onClick={() => openMoveDialog([menuProject.id])}><FolderInput size={14} /> Move to workspace…</button>
-          {folder && <button onClick={() => { moveProjectsToWorkspace([menuProject.id], null); syncWorkspaces(); setHomeMenu(null); }}><FolderMinus size={14} /> Remove from “{folder.name}”</button>}
+          {folder && <button onClick={() => { moveProjectsToWorkspace([menuProject.id], null); syncProjectsToRemote([menuProject.id], null); syncWorkspaces(); setHomeMenu(null); }}><FolderMinus size={14} /> Remove from “{folder.name}”</button>}
           <button className="danger" onClick={() => { deleteProject(menuProject); setHomeMenu(null); }}><Trash2 size={14} /> Delete</button>
         </>;
       })()) : menuWorkspace ? <>
@@ -1958,7 +2121,7 @@ function HomeScreen({ projects, refresh }: { projects: ProjectSummary[]; refresh
     {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialogEyebrow}</span><h2>{dialogHeading}</h2>{dialogHasInput ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>{dialogBody}</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialogDanger ? "danger" : "primary"} onClick={submitDialog}>{dialogConfirm}</button></div></div></div>}
   </main>;
 }
-function Editor({ project }: { project: Project }) {
+function Editor({ project, syncProjectToRemote }: { project: Project; syncProjectToRemote: (project: Project) => Promise<void> }) {
   const state = useDiagram(),
     {
       snapshot,
@@ -2306,7 +2469,15 @@ function Editor({ project }: { project: Project }) {
   useEffect(() => {
     setDiagram(nodes, edges);
     saveActiveDiagram(project.id, nodes, edges);
-  }, [nodes, edges, project.id, setDiagram]);
+    const active = readActiveProject();
+    if (!active) return;
+    const timer = window.setTimeout(() => {
+      void syncProjectToRemote(active.project).catch((error) => {
+        console.warn("Project sync failed:", error);
+      });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [nodes, edges, project.id, setDiagram, syncProjectToRemote]);
   const deleteSelected = () => {
     const selectedNodes = nodes
         .filter((n) => n.selected || n.id === selectedId)

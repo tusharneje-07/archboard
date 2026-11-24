@@ -11,6 +11,30 @@ npm run dev
 
 Open the local URL printed by Vite. Production checks are available with `npm run lint` and `npm run build`.
 
+## Authentication and persistent storage
+
+Configure these values in `.env`:
+
+```text
+WORKOS_API_KEY=sk_test_...
+WORKOS_CLIENT_ID=client_...
+VITE_WORKOS_CLIENT_ID=client_...
+WORKOS_API_HOSTNAME=api.workos.com
+VITE_WORKOS_API_HOSTNAME=
+ARCHBOARD_SQLITE_PATH=./data/archboard.sqlite
+```
+
+In the WorkOS dashboard configure:
+
+- Redirect URI: `http://localhost:5173/callback`
+- Initiate login URI: `http://localhost:5173/login`
+- Sign-out redirect: `http://localhost:5173`
+- Allowed web origin: `http://localhost:5173`
+
+For deployed environments, use HTTPS callback, login, sign-out, and allowed-origin values from the deployment domain.
+
+Authenticated projects are stored in SQLite at `data/archboard.sqlite` and cached in browser localStorage for offline/UI resilience. Each WorkOS user can create and retain 25 projects on the free tier. The API stores the existing compressed project JSON blob.
+
 ## Included
 
 - Drag-and-drop or click-to-place architecture shapes and containers

@@ -5,6 +5,9 @@
     },
     "api/view-archboard-dig.ts": {
       "includeFiles": "{demo_auth_tokens.yaml,dist/index.html}"
+    },
+    "api/projects.ts": {
+      "includeFiles": "data/*.sqlite"
     }
   },
   "rewrites": [
@@ -15,6 +18,10 @@
     {
       "source": "/view-archboard-dig/",
       "destination": "/api/view-archboard-dig"
+    },
+    {
+      "source": "/api/projects",
+      "destination": "/api/projects"
     },
     {
       "source": "/((?!api/).*)",
