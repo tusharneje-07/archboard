@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { ensureAuthTokenSchema, getOrCreateAuthToken } from "./auth-tokens";
 
 type HeaderValue = string | string[] | undefined;
 type ApiRequest = { method?: string; url?: string; headers: Record<string, HeaderValue>; body?: unknown };
@@ -47,6 +48,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_projects_user_updated ON projects(user_id, updated_at DESC);
 `);
+ensureAuthTokenSchema(db);
 
 let jwksCache: { clientId: string; hostname: string; issuer: string; jwks: ReturnType<typeof createRemoteJWKSet> } | null = null;
 
@@ -123,6 +125,7 @@ async function authenticate(req: ApiRequest) {
   const email = typeof verified.payload.email === "string" ? verified.payload.email : null;
   const now = Date.now();
   db.prepare(`INSERT INTO users(id, email, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email=excluded.email, updated_at=excluded.updated_at`).run(userId, email, now, now);
+  getOrCreateAuthToken(db, userId, email ?? "");
   return { userId, email };
 }
 

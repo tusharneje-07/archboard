@@ -1,6 +1,8 @@
+import Database from "better-sqlite3";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { ensureAuthTokenSchema, isValidAuthToken } from "./auth-tokens";
 
 type HeaderValue = string | string[] | undefined;
 type ApiRequest = {
@@ -24,8 +26,13 @@ type UploadPayload = {
 };
 
 const maxUploadBytes = 5 * 1024 * 1024;
-const tokenFile = resolve(process.cwd(), "demo_auth_tokens.yaml");
 const indexFile = resolve(process.cwd(), "dist/index.html");
+const databasePath = resolve(process.cwd(), process.env.ARCHBOARD_SQLITE_PATH ?? "./data/archboard.sqlite");
+mkdirSync(dirname(databasePath), { recursive: true });
+const db = new Database(databasePath);
+db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
+ensureAuthTokenSchema(db);
 
 function header(req: ApiRequest, name: string) {
   const value = req.headers[name.toLowerCase()];
@@ -73,27 +80,6 @@ async function readBody(req: ApiRequest): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req as unknown as AsyncIterable<Buffer | string>) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return Buffer.concat(chunks);
-}
-
-function tokenEntries(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    if (typeof entry === "string") return [entry.trim()].filter(Boolean);
-    if (!entry || typeof entry !== "object") return [];
-    const record = entry as Record<string, unknown>;
-    const token = record.token ?? record.value ?? record.auth_token;
-    return typeof token === "string" ? [token.trim()].filter(Boolean) : [];
-  });
-}
-
-async function readDemoTokens() {
-  const source = await readFile(tokenFile, "utf8");
-  const parsed = parseYaml(source) as unknown;
-  const root = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
-  const list = Array.isArray(root) ? root : root.demo_auth_tokens ?? root.tokens;
-  const tokens = tokenEntries(list);
-  if (!tokens.length) throw new Error("demo_auth_tokens.yaml does not contain any demo_auth_tokens entries.");
-  return new Set(tokens);
 }
 
 function parsePresentation(value: unknown, present: boolean) {
@@ -198,13 +184,11 @@ async function handlePut(req: ApiRequest, res: ApiResponse) {
   const token = upload.token || queryValue(req, "auth_token") || header(req, "x-auth-token") || bearer;
   if (!token) return sendJson(res, 401, { ok: false, error: "Missing auth_token." });
 
-  let validTokens: Set<string>;
   try {
-    validTokens = await readDemoTokens();
+    if (!isValidAuthToken(db, token)) return sendJson(res, 401, { ok: false, error: "Invalid auth_token." });
   } catch (error) {
-    return sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Could not read demo_auth_tokens.yaml." });
+    return sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : "Could not validate auth_token." });
   }
-  if (!validTokens.has(token.trim())) return sendJson(res, 401, { ok: false, error: "Invalid auth_token." });
 
   let diagram: { nodes: unknown[]; edges: unknown[] };
   try {

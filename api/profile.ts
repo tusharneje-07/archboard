@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { ensureAuthTokenSchema, getOrCreateAuthToken } from "./auth-tokens";
 
 type HeaderValue = string | string[] | undefined;
 type ApiRequest = { method?: string; url?: string; headers: Record<string, HeaderValue>; };
@@ -13,7 +14,9 @@ const databasePath = resolve(process.cwd(), process.env.ARCHBOARD_SQLITE_PATH ??
 mkdirSync(dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
 db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
 db.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, presentation INTEGER NOT NULL DEFAULT 0, node_count INTEGER NOT NULL, compression_codec TEXT NOT NULL, compression_data TEXT NOT NULL, compression_original_size INTEGER NOT NULL, workspace_id TEXT, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);`);
+ensureAuthTokenSchema(db);
 
 function loadEnv() {
   if (process.env.WORKOS_CLIENT_ID || process.env.VITE_WORKOS_CLIENT_ID) return;
@@ -71,8 +74,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const routeHash = pathname.match(/^\/([a-f0-9]{32})\/profile\/?$/)?.[1];
     if (routeHash !== hash) return sendJson(res, 403, { ok: false, error: "Profile hash does not belong to the authenticated user." });
     db.prepare(`INSERT INTO users(id, email, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email=excluded.email, updated_at=excluded.updated_at`).run(userId, email, Date.now(), Date.now());
+    const authToken = getOrCreateAuthToken(db, userId, email);
     const countRow = db.prepare("SELECT COUNT(*) AS count FROM projects WHERE user_id = ?").get(userId) as { count: number };
-    return sendJson(res, 200, { ok: true, profile: { id: userId, name: email.split("@")[0], email, projectCount: countRow.count, projectLimit: FREE_PROJECT_LIMIT, profileUrl: `/${hash}`, profileApiUrl: `/${hash}/profile` } });
+    return sendJson(res, 200, { ok: true, profile: { id: userId, name: email.split("@")[0], email, authToken, projectCount: countRow.count, projectLimit: FREE_PROJECT_LIMIT, profileUrl: `/${hash}`, profileApiUrl: `/${hash}/profile` } });
   } catch (error) {
     return sendJson(res, 401, { ok: false, error: error instanceof Error ? error.message : "Authentication failed." });
   }

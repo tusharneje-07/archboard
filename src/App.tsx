@@ -1512,7 +1512,8 @@ function App() {
   const profileId = !hashedProjectRoute ? path.match(/^\/([a-f0-9]{32})\/?$/)?.[1] : undefined;
   const isAuth = path === '/auth';
   const isRoot = path === '/';
-  const isHome = (profileId != null || (!projectId && !presentationId && !hashedProjectRoute && !isAuth && !isRoot && !/^\/view-archboard-dig\/?$/.test(path)));
+  const isProfilePage = path === '/profile';
+  const isHome = (profileId != null || (!projectId && !presentationId && !hashedProjectRoute && !isAuth && !isRoot && !isProfilePage && !/^\/view-archboard-dig\/?$/.test(path)));
   useEffect(() => {
     if (isHome) {
       closeActiveProject();
@@ -1547,15 +1548,20 @@ function App() {
     if (isRoot) {
       return <PremiumAuthScreen onStart={() => startAuth("sign-in")} />;
     }
-     if (isAuth || isHome) {
+     if (isAuth || isHome || isProfilePage) {
        return <PremiumAuthScreen onStart={() => startAuth("sign-in")} />;
     }
     return <main className="auth-shell"><section className="auth-card"><BrandMark /><h1>Authentication required</h1><p>Sign in to open this project.</p><div className="auth-actions"><button className="primary" onClick={() => startAuth("sign-in")}>Sign in</button></div></section></main>;
   }
+  if (isProfilePage) {
+    const displayName = [user.firstName, user.lastName].filter((value): value is string => !!value).join(" ").trim()
+      || (typeof user.email === "string" ? user.email.split("@")[0] : "Archboard user");
+    return <ProfileScreen userName={displayName} userEmail={user.email ?? ""} profileHash={profileHash} getAccessToken={getAccessToken} signOut={handleSignOut} />;
+  }
   if (isHome) {
     const displayName = [user.firstName, user.lastName].filter((value): value is string => !!value).join(" ").trim()
       || (typeof user.email === "string" ? user.email.split("@")[0] : "Archboard user");
-    return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries(false))} userName={displayName} userEmail={user.email ?? ""} signOut={handleSignOut} remoteError={remoteError} getAccessToken={getAccessToken} />;
+    return <HomeScreen projects={projects} refresh={() => setProjects(readProjectSummaries(false))} userName={displayName} userEmail={user.email ?? ""} remoteError={remoteError} getAccessToken={getAccessToken} />;
   }
   // Remote sync runs in the background. Cached projects render immediately,
   // so a slow or unavailable SQLite API cannot block an authenticated user.
@@ -1903,13 +1909,72 @@ function PremiumAuthScreen({ onStart }: { onStart: () => void }) {
     </main>
   );
 }
+function ProfileScreen({ userName, userEmail, profileHash, getAccessToken, signOut }: { userName: string; userEmail: string; profileHash: string; getAccessToken: () => Promise<string | null>; signOut: () => Promise<void> | void }) {
+  const [authToken, setAuthToken] = useState("");
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setError("");
+    void authenticatedProjectRequest<{ ok: true; profile: { authToken: string } }>(getAccessToken, `/${profileHash}/profile`)
+      .then((response) => { if (!cancelled) setAuthToken(response.profile.authToken); })
+      .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load your auth token."); });
+    return () => { cancelled = true; };
+  }, [getAccessToken, profileHash]);
+  const copyToken = async () => {
+    if (!authToken) return;
+    try {
+      await navigator.clipboard.writeText(authToken);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Could not copy the auth token.");
+    }
+  };
+  return <main className="profile-page">
+    <header className="profile-page-header">
+      <BrandMark onClick={() => navigate(profileHash ? `/${profileHash}` : "/")} />
+      <div className="profile-page-actions">
+        <button className="profile-back-button" type="button" onClick={() => navigate(profileHash ? `/${profileHash}` : "/")}><ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Workspace</button>
+        <button className="profile-page-signout" type="button" onClick={() => void signOut()}><LogOut size={14} /> Sign out</button>
+      </div>
+    </header>
+    <section className="profile-page-content">
+      <div className="profile-page-intro">
+        <span className="eyebrow">Account</span>
+        <h1>Your profile</h1>
+        <p>Manage your Archboard identity and the credentials used by your diagram integrations.</p>
+      </div>
+      <div className="profile-page-grid">
+        <section className="profile-identity-card">
+          <span className="profile-page-avatar">{userName.trim().charAt(0).toUpperCase() || "U"}</span>
+          <div><h2>{userName}</h2><p>{userEmail}</p></div>
+        </section>
+        <section className="profile-token-card" aria-labelledby="profile-token-heading">
+          <div className="profile-token-heading">
+            <div><span className="eyebrow">Developer access</span><h2 id="profile-token-heading">Auth token</h2></div>
+            <span className="profile-token-status">Active</span>
+          </div>
+          <p>Use this token with <code>/view-archboard-dig</code> to upload diagrams into presentation mode.</p>
+          <div className="profile-token-value">
+            <code>{authToken || (error ? "Unavailable" : "Loading token…")}</code>
+            <button type="button" onClick={() => void copyToken()} disabled={!authToken} aria-label="Copy auth token" title="Copy auth token">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
+          </div>
+          {copied && <span className="profile-copy-status" role="status">Copied to clipboard</span>}
+          {error && <p className="profile-token-error" role="alert">{error}</p>}
+          <small>Keep this token private. It is unique to your account.</small>
+        </section>
+      </div>
+    </section>
+  </main>;
+}
 function BrandMark({ onClick }: { onClick?: () => void }) {
   const content = <><span>AB</span><div><strong>archboard</strong><small>systems, clearly</small></div></>;
   return onClick
     ? <button className="brand-mark brand-mark-button" type="button" onClick={onClick} title="Go to home" aria-label="Go to home">{content}</button>
     : <div className="brand-mark">{content}</div>;
 }
-function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail = "", signOut, remoteError = "", getAccessToken }: { projects: ProjectSummary[]; refresh: () => void; userName?: string; userEmail?: string; signOut?: () => Promise<void> | void; remoteError?: string; getAccessToken: () => Promise<string | null> }) {
+function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail = "", remoteError = "", getAccessToken }: { projects: ProjectSummary[]; refresh: () => void; userName?: string; userEmail?: string; remoteError?: string; getAccessToken: () => Promise<string | null> }) {
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [draftName, setDraftName] = useState("");
   const [importNotice, setImportNotice] = useState("");
@@ -1924,18 +1989,8 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
   const [dragOverWorkspace, setDragOverWorkspace] = useState("");
   const [dragOverRoot, setDragOverRoot] = useState(false);
   const [dragOverOut, setDragOverOut] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [profileCount, setProfileCount] = useState(projects.length);
   const profileInitial = userName.trim().charAt(0).toUpperCase() || userEmail.trim().charAt(0).toUpperCase() || "U";
   const profileHash = md5(userEmail.trim().toLowerCase());
-  useEffect(() => {
-    if (!profileOpen || !profileHash) return;
-    let cancelled = false;
-    void authenticatedProjectRequest<{ ok: true; profile: { projectCount: number } }>(getAccessToken, `/${profileHash}/profile`)
-      .then((response) => { if (!cancelled) setProfileCount(response.profile.projectCount); })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [profileOpen, profileHash, getAccessToken]);
   const importInput = useRef<HTMLInputElement>(null);
   const sortedProjects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.createdAt) - Math.max(a.updatedAt, a.createdAt));
   const projectsSize = useMemo(() => formatStorageSize(new Blob([JSON.stringify(projects)]).size), [projects]);
@@ -2032,19 +2087,6 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
     syncWorkspaces();
     setMoveDialog(null);
   };
-  useEffect(() => {
-    if (!profileOpen) return;
-    const closeProfile = (event: MouseEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest(".profile-menu-wrap")) setProfileOpen(false);
-    };
-    const closeProfileKey = (event: KeyboardEvent) => { if (event.key === "Escape") setProfileOpen(false); };
-    window.addEventListener("mousedown", closeProfile);
-    window.addEventListener("keydown", closeProfileKey);
-    return () => {
-      window.removeEventListener("mousedown", closeProfile);
-      window.removeEventListener("keydown", closeProfileKey);
-    };
-  }, [profileOpen]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (dialog || moveDialog) return;
@@ -2233,12 +2275,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
         <button className="home-multi-import" onClick={() => { setDraftName(""); setDialog({ type: "workspace-create" }); }}><FolderPlus size={16} /> New workspace</button>
         <button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button>
         <div className="profile-menu-wrap">
-          <button className="profile-circle" onClick={() => setProfileOpen((open) => !open)} title="Open profile" aria-label="Open profile" aria-expanded={profileOpen}>{profileInitial}</button>
-          {profileOpen && <div className="profile-popover" role="dialog" aria-label="Account profile">
-            <div className="profile-popover-head"><span className="profile-avatar">{profileInitial}</span><div><strong>{userName}</strong><span>{userEmail}</span></div></div>
-            <div className="profile-stat"><span>Projects</span><strong>{profileCount} / 25</strong></div>
-            <button className="profile-signout" onClick={() => void signOut?.()}><LogOut size={14} /> Sign out</button>
-          </div>}
+          <button className="profile-circle" onClick={() => navigate("/profile")} title="Open profile" aria-label="Open profile">{profileInitial}</button>
         </div>
         <input ref={importInput} hidden type="file" accept=".json,application/json" multiple onChange={(event) => void importProjects(event)} />
       </div>

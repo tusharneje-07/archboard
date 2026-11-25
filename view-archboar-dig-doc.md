@@ -1,20 +1,15 @@
 # `/view-archboard-dig` API
 
-Upload an Archboard JSON diagram with a demo token and open it directly in presentation mode. Presentation chrome is off by default and can be enabled per request.
+Upload an Archboard JSON diagram with a user auth token and open it directly in presentation mode. Presentation chrome is off by default and can be enabled per request.
 
 The route accepts `PUT` requests for uploads and `GET` requests for the presentation page. Uploaded diagrams are not persisted on the server. The upload response redirects to a URL containing the diagram payload in the URL fragment, so the presentation URL is self-contained.
 
 ## Authentication
 
-Tokens are read from [`demo_auth_tokens.yaml`](./demo_auth_tokens.yaml).
-
-```yaml
-demo_auth_tokens:
-  - token: archboard-demo-token
-    description: Default Archboard demo token
-  - token: archboard-demo-2026
-    description: Archboard demo token for 2026
-```
+Tokens are generated and stored in SQLite for each authenticated Archboard
+user. Each user receives one unique token in the format
+`sk_<md5(email + token_creation_time)>`. The token is available on the
+authenticated `/profile` page under **Auth token**.
 
 The `auth_token` can be supplied in any of these places:
 
@@ -34,7 +29,7 @@ The preferred request is `multipart/form-data` with a JSON file and the token.
 
 ```bash
 curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
-  -F "auth_token=archboard-demo-token" \
+  -F "auth_token=sk_<user-token>" \
   -F "presentation=true" \
   -F "file=@architecture.json;type=application/json"
 ```
@@ -45,7 +40,7 @@ To hide the top bar and annotation tools, send `presentation=false` or omit the 
 
 ```bash
 curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
-  -F "auth_token=archboard-demo-token" \
+  -F "auth_token=sk_<user-token>" \
   -F "presentation=false" \
   -F "file=@architecture.json;type=application/json"
 ```
@@ -67,7 +62,7 @@ curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "auth_token": "archboard-demo-token",
+    "auth_token": "sk_<user-token>",
     "name": "Payments architecture",
     "presentation": true,
     "nodes": [],
@@ -89,7 +84,7 @@ curl -i -X PUT https://archboard-iota.vercel.app/view-archboard-dig \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "auth_token": "archboard-demo-token",
+    "auth_token": "sk_<user-token>",
     "name": "Payments architecture",
     "presentation": false,
     "nodes": [],
@@ -106,7 +101,7 @@ curl -X PUT "https://archboard-iota.vercel.app/view-archboard-dig?response=json"
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d '{
-    "auth_token": "archboard-demo-token",
+    "auth_token": "sk_<user-token>",
     "name": "Payments architecture",
     "presentation": true,
     "nodes": [],
@@ -167,7 +162,7 @@ For JSON requests, use the optional `name` field. If no name is provided, the ti
 | `401` | Missing or invalid `auth_token`. |
 | `405` | Method is not `PUT`, `GET`, or `OPTIONS`. |
 | `413` | Upload exceeds the 5 MB limit. |
-| `500` | Token file, presentation bundle, or unexpected server error. |
+| `500` | Database, presentation bundle, or unexpected server error. |
 
 ## CORS
 
@@ -182,4 +177,4 @@ The endpoint allows cross-origin requests from any origin and supports:
 
 ## Deployment note
 
-`vercel.json` rewrites `/view-archboard-dig` to the serverless function at `api/view-archboard-dig.ts`. The function bundles `demo_auth_tokens.yaml` and `dist/index.html` so the endpoint can validate tokens and serve the presentation shell in production.
+`vercel.json` rewrites `/view-archboard-dig` to the serverless function at `api/view-archboard-dig.ts`. The function bundles `dist/index.html` and validates tokens against SQLite in production.

@@ -4,7 +4,7 @@
       "includeFiles": "SKILL.md"
     },
     "api/view-archboard-dig.ts": {
-      "includeFiles": "{demo_auth_tokens.yaml,dist/index.html}"
+      "includeFiles": "{data/*.sqlite,dist/index.html}"
     },
     "api/projects.ts": {
       "includeFiles": "data/*.sqlite"
