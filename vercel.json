@@ -11,6 +11,9 @@
     },
     "api/profile.ts": {
       "includeFiles": "data/*.sqlite"
+    },
+    "api/project-share.ts": {
+      "includeFiles": "data/*.sqlite"
     }
   },
   "rewrites": [
@@ -25,6 +28,14 @@
     {
       "source": "/api/projects",
       "destination": "/api/projects"
+    },
+    {
+      "source": "/api/project-share",
+      "destination": "/api/project-share"
+    },
+    {
+      "source": "/([a-f0-9]{32})/live/img/(svg|png)/(.+)\\.(svg|png)",
+      "destination": "/api/project-share?profileHash=$1&format=$2&filename=$3.$4"
     },
     {
       "source": "/([a-f0-9]{32})/profile",

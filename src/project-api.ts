@@ -59,3 +59,17 @@ export const deleteRemoteProjects = (getAccessToken: () => Promise<string | null
     method: "DELETE",
     body: JSON.stringify({ ids }),
   });
+
+export type ShareFormat = "png" | "svg";
+export type ProjectShare = { format: ShareFormat; url: string; revision: string; publishedAt: number };
+
+export const getProjectShares = (getAccessToken: () => Promise<string | null>, projectId: string) =>
+  authenticatedProjectRequest<{ ok: true; shares: ProjectShare[] }>(getAccessToken, `/api/project-share?projectId=${encodeURIComponent(projectId)}`);
+
+export const publishProjectShare = (
+  getAccessToken: () => Promise<string | null>,
+  payload: { projectId: string; format: ShareFormat; data: string; revision: string; sourceUpdatedAt: number },
+) => authenticatedProjectRequest<{ ok: true; share: ProjectShare }>(getAccessToken, "/api/project-share", {
+  method: "POST",
+  body: JSON.stringify(payload),
+});

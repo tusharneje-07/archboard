@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import viewArchboardDig from './api/view-archboard-dig'
 import projectsApi from './api/projects'
 import profileApi from './api/profile'
+import projectShareApi from './api/project-share'
 
 function viewArchboardDigDevApi(): Plugin {
   return {
@@ -56,8 +57,17 @@ function projectsDevApi(): Plugin {
     },
   }
 }
+function projectShareDevApi(): Plugin {
+  return { name: 'project-share-dev-api', configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      const pathname = (req.url ?? '').split('?')[0]
+      if (pathname !== '/api/project-share' && !/^\/[a-f0-9]{32}\/live\/img\/(svg|png)\/[^/]+\.(svg|png)\/?$/.test(pathname)) return next()
+      await projectShareApi(req as never, res as never)
+    })
+  } }
+}
 
 export default defineConfig({
-  plugins: [react(), viewArchboardDigDevApi(), projectsDevApi(), profileDevApi()],
+  plugins: [react(), viewArchboardDigDevApi(), projectsDevApi(), profileDevApi(), projectShareDevApi()],
   build: { sourcemap: true },
 })

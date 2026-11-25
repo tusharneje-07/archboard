@@ -34,7 +34,7 @@ import {
 } from "@xyflow/react";
 import { useAuth } from "@workos-inc/authkit-react";
 import md5 from "md5";
-import { authenticatedProjectRequest, deleteRemoteProjects, listRemoteProjects, saveRemoteProject, type RemoteProject } from "./project-api";
+import { authenticatedProjectRequest, deleteRemoteProjects, getProjectShares, listRemoteProjects, publishProjectShare, saveRemoteProject, type RemoteProject, type ShareFormat } from "./project-api";
 import GradientWaves from "./components/react-bits/GradientWaves/GradientWaves";
 import TechText from "./components/react-bits/TechText/TechText";
 import {
@@ -628,6 +628,12 @@ function readExportSettings(): ExportSettings {
   } catch {
     return defaultExportSettings;
   }
+}
+async function downloadSkillFile() {
+  const response = await fetch("/SKILL.md");
+  const content = response.ok ? await response.text() : "Use Archboard's nodes and edges JSON format to draft an importable architecture diagram.";
+  const href = URL.createObjectURL(new Blob([content], { type: "text/markdown" }));
+  const anchor = document.createElement("a"); anchor.href = href; anchor.download = "SKILL.md"; anchor.click(); URL.revokeObjectURL(href);
 }
 const inspectorTabKey = "archboard-inspector-tab";
 const inspectorScrollKey = "archboard-inspector-scroll";
@@ -1566,7 +1572,7 @@ function App() {
   // Remote sync runs in the background. Cached projects render immediately,
   // so a slow or unavailable SQLite API cannot block an authenticated user.
   if (!loadedProject || loadedProject.id !== projectId) return null;
-  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} profileHash={profileHash} syncProjectToRemote={syncProjectToRemote} /></ReactFlowProvider>;
+  return <ReactFlowProvider><Editor key={loadedProject.id} project={loadedProject} profileHash={profileHash} getAccessToken={getAccessToken} syncProjectToRemote={syncProjectToRemote} /></ReactFlowProvider>;
 }
 type PresentationTool = "laser" | "pencil" | "highlighter" | "eraser";
 function PresentationView({ project, showExit = true, showToolbar = true }: { project: Project; showExit?: boolean; showToolbar?: boolean }) {
@@ -2272,6 +2278,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
       <BrandMark />
       <div className="home-actions">
         <button className="home-multi-import" onClick={() => importInput.current?.click()}><Upload size={16} /> Import</button>
+        <button className="home-multi-import skill-button" onClick={() => void downloadSkillFile()} title="Download SKILL"><FileJson size={16} /> Download SKILL</button>
         <button className="home-multi-import" onClick={() => { setDraftName(""); setDialog({ type: "workspace-create" }); }}><FolderPlus size={16} /> New workspace</button>
         <button className="primary home-create" onClick={createProject}><Plus size={16} /> New project</button>
         <div className="profile-menu-wrap">
@@ -2371,7 +2378,7 @@ function HomeScreen({ projects, refresh, userName = "Archboard user", userEmail 
     {dialog && <div className="project-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}><div className="project-dialog" role="dialog" aria-modal="true"><span className="eyebrow">{dialogEyebrow}</span><h2>{dialogHeading}</h2>{dialogHasInput ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submitDialog()} /> : <p>{dialogBody}</p>}<div className="project-dialog-actions"><button onClick={closeDialog}>Cancel</button><button className={dialogDanger ? "danger" : "primary"} onClick={submitDialog}>{dialogConfirm}</button></div></div></div>}
   </main>;
 }
-function Editor({ project, profileHash, syncProjectToRemote }: { project: Project; profileHash: string; syncProjectToRemote: (project: Project) => Promise<void> }) {
+function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: { project: Project; profileHash: string; getAccessToken: () => Promise<string | null>; syncProjectToRemote: (project: Project) => Promise<void> }) {
   const state = useDiagram(),
     {
       snapshot,
@@ -2392,12 +2399,18 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
      [rightWidth, setRightWidth] = useState(250),
      [rightPanelOpen, setRightPanelOpen] = useState(true),
     [exportOpen, setExportOpen] = useState(false),
+    [exportTab, setExportTab] = useState<"export" | "share">("export"),
     [exportBusy, setExportBusy] = useState(false),
      [exportFormat, setExportFormat] = useState<ExportFormat>(() => readExportSettings().format),
      [exportTransparent, setExportTransparent] = useState(() => readExportSettings().transparent),
      [exportQuality, setExportQuality] = useState(() => readExportSettings().quality),
      [exportDpi, setExportDpi] = useState(() => readExportSettings().dpi),
     [exportPreview, setExportPreview] = useState(""),
+    [shareFormat, setShareFormat] = useState<ShareFormat>("png"),
+    [shareUrl, setShareUrl] = useState(""),
+    [shareError, setShareError] = useState(""),
+    [sharePublishedRevision, setSharePublishedRevision] = useState(""),
+    [shareBusy, setShareBusy] = useState(false),
      [importOpen, setImportOpen] = useState(false),
      [importDragActive, setImportDragActive] = useState(false),
      [importFileName, setImportFileName] = useState(""),
@@ -2415,6 +2428,21 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
     canvas = useRef<HTMLDivElement>(null),
     dropRef = useRef(false),
     exportBusyRef = useRef(false);
+  const latestDiagram = useRef({ nodes, edges });
+  latestDiagram.current = { nodes, edges };
+  const diagramRevision = useCallback((items = nodes, connections = edges) => md5(JSON.stringify({ nodes: items, edges: connections })), [nodes, edges]);
+  const sharedImageStale = Boolean(sharePublishedRevision) && sharePublishedRevision !== diagramRevision();
+  useEffect(() => {
+    let active = true;
+    void getProjectShares(getAccessToken, project.id).then((result) => {
+      if (active) {
+        const current = result.shares.find((share) => share.format === shareFormat);
+        setSharePublishedRevision(current?.revision ?? "");
+        setShareUrl(current?.url ?? "");
+      }
+    }).catch(() => { /* Sharing is optional until the first publish. */ });
+    return () => { active = false; };
+  }, [getAccessToken, project.id, shareFormat]);
   useCanvasWheelNavigation(reactFlow, canvas, 0.5, 2);
   const layerRoot = useRef<Root | null>(null);
   const layerHost = useRef<HTMLDivElement | null>(null);
@@ -3266,12 +3294,12 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
     else if (!frame && node.parentId) { snapshot(); setNodes((items) => arrangeFrame(node.parentId!, items.map((item) => item.id === node.id ? { ...item, parentId: undefined, position: absolute } : item))); }
   };
    useEffect(() => { if (!exportOpen || !canvas.current) return; const bounds = getExportBounds(); if (!bounds) return; const padding = 200, width = bounds.maxX - bounds.minX + padding * 2, height = bounds.maxY - bounds.minY + padding * 2, element = canvas.current, oldWidth = element.style.width, oldHeight = element.style.height, oldFlex = element.style.flex, oldOverflow = element.style.overflow, viewport = reactFlow.getViewport(); element.classList.add("exporting"); element.style.width = `${width}px`; element.style.height = `${height}px`; element.style.flex = "0 0 auto"; element.style.overflow = "visible"; reactFlow.setViewport({ x: padding - bounds.minX, y: padding - bounds.minY, zoom: 1 }); requestAnimationFrame(() => requestAnimationFrame(() => { void import("html-to-image").then(({ toPng }) => toPng(element, { backgroundColor: exportTransparent ? undefined : "#f8fafc", pixelRatio: 1, width, height, style: { width: `${width}px`, height: `${height}px`, flex: "0 0 auto", overflow: "visible" } })).then(setExportPreview).catch(() => setExportPreview("")).finally(() => { element.classList.remove("exporting"); element.style.width = oldWidth; element.style.height = oldHeight; element.style.flex = oldFlex; element.style.overflow = oldOverflow; reactFlow.setViewport(viewport); }); })); }, [exportOpen, exportTransparent, nodes, edges]);
-  const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat, overrides: { transparent?: boolean; quality?: number; dpi?: number } = {}) => {
-    if (format === "json") { exportJson(); setExportOpen(false); return; }
-    if (!canvas.current || exportBusyRef.current) return;
+  const exportImage = async (format: "png" | "svg" | "jpg" | "json" = exportFormat, overrides: { transparent?: boolean; quality?: number; dpi?: number; download?: boolean } = {}) => {
+    if (format === "json") { exportJson(); setExportOpen(false); return null; }
+    if (!canvas.current || exportBusyRef.current) return null;
     const originalViewport = reactFlow.getViewport(), originalWidth = canvas.current.style.width, originalHeight = canvas.current.style.height, originalFlex = canvas.current.style.flex, originalOverflow = canvas.current.style.overflow;
     const bounds = getExportBounds();
-    if (!bounds) return;
+    if (!bounds) return null;
     exportBusyRef.current = true;
     setExportBusy(true);
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -3290,11 +3318,14 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
       const options = { backgroundColor, quality: quality / 100, pixelRatio: dpi / 96, width: exportWidth, height: exportHeight, style: exportStyle };
       const { toPng, toJpeg, toSvg } = await import("html-to-image");
       const data = format === "png" ? await toPng(canvas.current, options) : format === "jpg" ? await toJpeg(canvas.current, options) : await toSvg(canvas.current, { backgroundColor, width: exportWidth, height: exportHeight, style: exportStyle });
-      const a = document.createElement("a");
-      a.href = data;
-      a.download = `archboard.${format === "jpg" ? "jpg" : format}`;
-      a.click();
-      setExportOpen(false);
+      if (overrides.download !== false) {
+        const a = document.createElement("a");
+        a.href = data;
+        a.download = `archboard.${format === "jpg" ? "jpg" : format}`;
+        a.click();
+        setExportOpen(false);
+      }
+      return data;
     } finally {
       canvas.current.classList.remove("exporting");
       canvas.current.style.width = originalWidth;
@@ -3306,7 +3337,6 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
       exportBusyRef.current = false;
     }
   };
-  const downloadSkill = async () => { const response = await fetch("/SKILL.md"); const content = response.ok ? await response.text() : "Use Archboard's nodes and edges JSON format to draft an importable architecture diagram."; const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([content], { type: "text/markdown" })); a.download = "SKILL.md"; a.click(); URL.revokeObjectURL(a.href); };
   const exportJson = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
@@ -3316,6 +3346,20 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
     );
     a.download = `${project.name.replace(/[\\/:*?"<>|]+/g, "-").trim() || "archboard-diagram"}.json`;
     a.click();
+  };
+  const publishShare = async () => {
+    if (shareBusy || exportBusyRef.current) return;
+    const sourceRevision = diagramRevision();
+    setShareBusy(true); setShareError("");
+    try {
+      const data = await exportImage(shareFormat, { download: false, transparent: true });
+      if (!data) throw new Error("Could not compile the diagram image.");
+      if (diagramRevision(latestDiagram.current.nodes, latestDiagram.current.edges) !== sourceRevision) throw new Error("The diagram changed while compiling. Publish again.");
+      const result = await publishProjectShare(getAccessToken, { projectId: project.id, format: shareFormat, data, revision: sourceRevision, sourceUpdatedAt: project.updatedAt });
+      setSharePublishedRevision(result.share.revision); setShareUrl(result.share.url);
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Could not publish the shared image.");
+    } finally { setShareBusy(false); }
   };
   const selectSingleNode = (id: string) => {
     setNodes((items) => items.map((node) => ({ ...node, selected: node.id === id })));
@@ -3374,10 +3418,6 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
           <button className="icon-button" onClick={openImportDialog} title="Import JSON">
             <Upload size={17} />
           </button>
-          <button className="skill-button" onClick={downloadSkill} title="Download SKILL">
-            <FileJson size={16} />
-            Download SKILL
-          </button>
           <button className="presentation-button" onClick={() => window.open(`/present/${project.id}`, "_blank", "noopener,noreferrer")} title="Open presentation in a new tab">
             <PresentationIcon size={16} />
             Present
@@ -3388,10 +3428,11 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
           </button>
           <button className="primary" onClick={() => setExportOpen(true)}>
             <Download size={16} />
-            Export
+            Export &amp; Share
           </button>
         </div>
       </header>
+      {sharedImageStale && <div className="share-stale-banner" role="status"><strong>Shared image is stale.</strong><span>Your public image no longer matches this canvas.</span><button onClick={() => { setExportOpen(true); setExportTab("share"); }}>Publish</button></div>}
       <div className="workspace">
         <aside className="left-panel" style={{ width: leftWidth, flexBasis: leftWidth }}>
           <div className="panel-tabs">
@@ -3731,15 +3772,22 @@ function Editor({ project, profileHash, syncProjectToRemote }: { project: Projec
        {exportOpen && (
         <div className="export-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setExportOpen(false)}>
           <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
-            <div className="export-dialog-head"><div><span className="eyebrow">Canvas export</span><h2 id="export-title">Export</h2></div><button className="quiet" onClick={() => setExportOpen(false)}><X size={17} /></button></div>
-            {exportPreview && <div className="export-preview"><img src={exportPreview} alt="Diagram export preview" /></div>}
+            <div className="export-dialog-head"><div><span className="eyebrow">Canvas export</span><h2 id="export-title">Export &amp; Share</h2></div><button className="quiet" onClick={() => setExportOpen(false)}><X size={17} /></button></div>
+            <div className="export-tabs" role="tablist"><button className={exportTab === "export" ? "active" : ""} onClick={() => setExportTab("export")}>Export</button><button className={exportTab === "share" ? "active" : ""} onClick={() => setExportTab("share")}>Share</button></div>
+            {exportTab === "export" ? <>{exportPreview && <div className="export-preview"><img src={exportPreview} alt="Diagram export preview" /></div>}
             <div className="export-options">
               <Field label="Format"><select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}><option value="json">JSON</option><option value="png">PNG</option><option value="svg">SVG</option><option value="jpg">JPG</option></select></Field>
               <Field label="DPI"><select value={exportDpi} onChange={(e) => setExportDpi(+e.target.value)}><option value="96">96 DPI</option><option value="144">144 DPI</option><option value="192">192 DPI</option><option value="300">300 DPI</option></select></Field>
               {exportFormat !== "json" && <><Field label="Quality"><input type="range" min="40" max="100" value={exportQuality} onChange={(e) => setExportQuality(+e.target.value)} /><b>{exportQuality}%</b></Field><label className="export-check"><input type="checkbox" checked={exportTransparent} onChange={(e) => setExportTransparent(e.target.checked)} /> Transparent background</label></>}
             </div>
             <p className="helper">Preview shows the diagram artwork before download. JSON exports the complete editable structure; PNG, JPG, and SVG exclude editor controls.</p>
-            <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" disabled={exportBusy} onClick={() => exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div>
+            <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" disabled={exportBusy} onClick={() => void exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div></> : <div className="share-panel">
+              <Field label="Image format"><select value={shareFormat} onChange={(event) => { setShareFormat(event.target.value as ShareFormat); setShareUrl(""); setShareError(""); }}><option value="png">PNG</option><option value="svg">SVG</option></select></Field>
+              <p className="helper">Create a public, read-only image URL for this project.</p>
+              {shareUrl && <div className="share-url"><code>{window.location.origin}{shareUrl}</code><button onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}${shareUrl}`)}><Copy size={14} /> Copy public URL</button></div>}
+              {shareError && <p className="code-error">{shareError}</p>}
+              <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" disabled={shareBusy || exportBusy} onClick={() => void publishShare()}>{shareBusy ? "Publishing…" : "Create public URL"}</button></div>
+            </div>}
           </section>
         </div>
        )}
