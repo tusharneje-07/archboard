@@ -34,7 +34,7 @@ import {
 } from "@xyflow/react";
 import { useAuth } from "@workos-inc/authkit-react";
 import md5 from "md5";
-import { authenticatedProjectRequest, deleteRemoteProjects, getProjectShares, listRemoteProjects, publishProjectShare, saveRemoteProject, type RemoteProject, type ShareFormat } from "./project-api";
+import { authenticatedProjectRequest, deleteProjectShare, deleteRemoteProjects, getProjectShares, listRemoteProjects, publishProjectShare, saveRemoteProject, type RemoteProject, type ShareFormat } from "./project-api";
 import GradientWaves from "./components/react-bits/GradientWaves/GradientWaves";
 import TechText from "./components/react-bits/TechText/TechText";
 import {
@@ -1919,6 +1919,7 @@ function ProfileScreen({ userName, userEmail, profileHash, getAccessToken, signO
   const [authToken, setAuthToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -1953,6 +1954,21 @@ function ProfileScreen({ userName, userEmail, profileHash, getAccessToken, signO
       setError("Could not copy the auth token.");
     }
   };
+  const deleteToken = async () => {
+    if (!authToken || !window.confirm("Revoke your auth token? Integrations using it will stop working.")) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await authenticatedProjectRequest<{ ok: true; deleted: boolean }>(getAccessToken, `/${profileHash}/profile`, { method: "DELETE", headers: { "X-Archboard-Email": userEmail } });
+      setAuthToken("");
+      setCopied(false);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Could not revoke your auth token.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+  const maskedToken = authToken ? `sk_${"*".repeat(32)}` : "";
   return <main className="profile-page">
     <header className="profile-page-header">
       <BrandMark onClick={() => navigate(profileHash ? `/${profileHash}` : "/")} />
@@ -1980,8 +1996,11 @@ function ProfileScreen({ userName, userEmail, profileHash, getAccessToken, signO
           <p>Use this token with <code>/view-archboard-dig</code> to upload diagrams into presentation mode.</p>
           {authToken
             ? <div className="profile-token-value">
-              <code>{authToken}</code>
-              <button type="button" onClick={() => void copyToken()} aria-label="Copy auth token" title="Copy auth token">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
+              <code aria-label="Masked auth token">{maskedToken}</code>
+              <div className="profile-token-actions">
+                <button type="button" onClick={() => void copyToken()} disabled={deleting} aria-label="Copy auth token" title="Copy auth token">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
+                <button className="profile-token-revoke" type="button" onClick={() => void deleteToken()} disabled={deleting} aria-label="Revoke auth token">{deleting ? "Revoking…" : <><Trash2 size={14} /> Revoke token</>}</button>
+              </div>
             </div>
             : <button className="primary profile-create-token" type="button" onClick={() => void createToken()} disabled={loading || creating}>{creating ? "Creating auth token…" : loading ? "Loading…" : "Create auth token"}</button>}
           {copied && <span className="profile-copy-status" role="status">Copied to clipboard</span>}
@@ -2428,7 +2447,9 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
     [shareUrl, setShareUrl] = useState(""),
     [shareError, setShareError] = useState(""),
     [sharePublishedRevision, setSharePublishedRevision] = useState(""),
+    [shareLoading, setShareLoading] = useState(true),
     [shareBusy, setShareBusy] = useState(false),
+    [shareDeleteBusy, setShareDeleteBusy] = useState(false),
      [importOpen, setImportOpen] = useState(false),
      [importDragActive, setImportDragActive] = useState(false),
      [importFileName, setImportFileName] = useState(""),
@@ -2452,13 +2473,16 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
   const sharedImageStale = Boolean(sharePublishedRevision) && sharePublishedRevision !== diagramRevision();
   useEffect(() => {
     let active = true;
+    setShareLoading(true);
     void getProjectShares(getAccessToken, project.id).then((result) => {
       if (active) {
         const current = result.shares.find((share) => share.format === shareFormat);
         setSharePublishedRevision(current?.revision ?? "");
         setShareUrl(current?.url ?? "");
       }
-    }).catch(() => { /* Sharing is optional until the first publish. */ });
+    }).catch(() => { /* Sharing is optional until the first publish. */ }).finally(() => {
+      if (active) setShareLoading(false);
+    });
     return () => { active = false; };
   }, [getAccessToken, project.id, shareFormat]);
   useCanvasWheelNavigation(reactFlow, canvas, 0.5, 2);
@@ -3379,6 +3403,17 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
       setShareError(error instanceof Error ? error.message : "Could not publish the shared image.");
     } finally { setShareBusy(false); }
   };
+  const stopSharing = async () => {
+    if (shareBusy || shareDeleteBusy || !shareUrl || !window.confirm(`Stop sharing the public ${shareFormat.toUpperCase()} image?`)) return;
+    setShareDeleteBusy(true); setShareError("");
+    try {
+      await deleteProjectShare(getAccessToken, project.id, shareFormat);
+      setShareUrl("");
+      setSharePublishedRevision("");
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Could not delete the public image URL.");
+    } finally { setShareDeleteBusy(false); }
+  };
   const selectSingleNode = (id: string) => {
     setNodes((items) => items.map((node) => ({ ...node, selected: node.id === id })));
     setEdges((items) => items.map((edge) => ({ ...edge, selected: false })));
@@ -3450,7 +3485,6 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
           </button>
         </div>
       </header>
-      {sharedImageStale && <div className="share-stale-banner" role="status"><strong>Shared image is stale.</strong><span>Your public image no longer matches this canvas.</span><button onClick={() => { setExportOpen(true); setExportTab("share"); }}>Publish</button></div>}
       <div className="workspace">
         <aside className="left-panel" style={{ width: leftWidth, flexBasis: leftWidth }}>
           <div className="panel-tabs">
@@ -3464,6 +3498,7 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
               <h2>Shapes</h2>
             </div>
           </div>
+          <div className="shape-panel-scroll">
           <p className="panel-note">Drag onto the canvas or click to place.</p>
           <div className="shape-list">
             {shapeOptions.map(([kind, label, Icon]) => (
@@ -3487,7 +3522,10 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
                 <Plus size={13} className="shape-plus" />
               </button>
             ))}
-           </div></>}
+           </div>
+           {sharedImageStale && <div className="share-stale-banner" role="status"><strong>Shared image is stale.</strong><span>Your public image no longer matches this canvas.</span><button onClick={() => { setExportOpen(true); setExportTab("share"); }}>Publish updated image</button></div>}
+          </div>
+           </>}
              {leftTab === "code" && <div className="code-panel">
               <div className="code-panel-head"><div><span className="eyebrow">Current file</span><strong>{codeFormat === "mermaid" ? "Mermaid Markdown" : "Diagram JSON"}</strong></div><div className="code-format-tabs" role="tablist" aria-label="Code format"><button className={codeFormat === "json" ? "active" : ""} onClick={() => { setCodeFormat("json"); setCodeDraft(diagramJson()); setCodeError(""); setCodeCopied(false); }} role="tab" aria-selected={codeFormat === "json"}><FileJson size={13} /> JSON</button><button className={codeFormat === "mermaid" ? "active" : ""} onClick={() => { setCodeFormat("mermaid"); setCodeDraft(mermaidDiagram()); setCodeError(""); setCodeCopied(false); }} role="tab" aria-selected={codeFormat === "mermaid"}>⌘ Mermaid</button></div><div className="code-panel-actions"><button className="quiet" onClick={refreshCodeSource} title={`Refresh ${codeFormat === "mermaid" ? "Mermaid" : "JSON"}`}>Refresh</button><button className="quiet" onClick={() => void copyCodeSource()} title="Copy current code"><Copy size={13} /> {codeCopied ? "Copied" : "Copy"}</button>{codeFormat === "mermaid" && <button className="quiet" onClick={downloadMermaidMarkdown} title="Download Markdown"><Download size={13} /> .md</button>}<button className="quiet" onClick={() => setCodeFullscreen(true)} title="Open code in full screen"><Maximize2 size={14} /> <span>Full screen</span></button></div></div>
                {!codeFullscreen && <Suspense fallback={<div className="diagram-monaco-editor" />}><MonacoEditor
@@ -3800,11 +3838,12 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
             </div>
             <p className="helper">Preview shows the diagram artwork before download. JSON exports the complete editable structure; PNG, JPG, and SVG exclude editor controls.</p>
             <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" disabled={exportBusy} onClick={() => void exportImage()}><Download size={15} /> Download {exportFormat.toUpperCase()}</button></div></> : <div className="share-panel">
-              <Field label="Image format"><select value={shareFormat} onChange={(event) => { setShareFormat(event.target.value as ShareFormat); setShareUrl(""); setShareError(""); }}><option value="png">PNG</option><option value="svg">SVG</option></select></Field>
+              <Field label="Image format"><select value={shareFormat} disabled={shareLoading || Boolean(shareUrl) || shareBusy || shareDeleteBusy} title={shareUrl ? "Delete the current public URL before changing format" : undefined} onChange={(event) => { setShareFormat(event.target.value as ShareFormat); setShareUrl(""); setShareError(""); }}><option value="png">PNG</option><option value="svg">SVG</option></select></Field>
               <p className="helper">Create a public, read-only image URL for this project.</p>
-              {shareUrl && <div className="share-url"><code>{window.location.origin}{shareUrl}</code><button onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}${shareUrl}`)}><Copy size={14} /> Copy public URL</button></div>}
+              {sharedImageStale && <div className="share-stale-banner share-dialog-stale" role="status"><strong>Shared image is stale.</strong><span>Your public image no longer matches this canvas.</span><button disabled={shareBusy || shareDeleteBusy || exportBusy} onClick={() => void publishShare()}>{shareBusy ? "Publishing…" : "Update public URL"}</button></div>}
+              {shareUrl && <div className="share-url"><code>{window.location.origin}{shareUrl}</code><div className="share-url-actions"><button onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}${shareUrl}`)}><Copy size={14} /> Copy public URL</button><button className="share-delete-button" disabled={shareBusy || shareDeleteBusy} onClick={() => void stopSharing()}>{shareDeleteBusy ? "Stopping…" : "Delete public URL"}</button></div></div>}
               {shareError && <p className="code-error">{shareError}</p>}
-              <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button><button className="primary" disabled={shareBusy || exportBusy} onClick={() => void publishShare()}>{shareBusy ? "Publishing…" : "Create public URL"}</button></div>
+              <div className="export-actions"><button onClick={() => setExportOpen(false)}>Cancel</button>{shareLoading ? <span className="share-active-status" role="status">Checking public URL…</span> : shareUrl ? sharedImageStale ? <button className="primary" disabled={shareBusy || shareDeleteBusy || exportBusy} onClick={() => void publishShare()}>{shareBusy ? "Publishing…" : "Update public URL"}</button> : <span className="share-active-status" role="status">Public URL active</span> : <button className="primary" disabled={shareBusy || shareDeleteBusy || exportBusy} onClick={() => void publishShare()}>{shareBusy ? "Publishing…" : "Create public URL"}</button>}</div>
             </div>}
           </section>
         </div>

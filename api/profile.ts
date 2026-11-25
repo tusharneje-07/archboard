@@ -75,9 +75,9 @@ function profileHashFor(email: string) {
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Archboard-Email");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   if (req.method === "OPTIONS") { res.statusCode = 204; res.end(); return; }
-  if (req.method !== "GET" && req.method !== "POST") return sendJson(res, 405, { ok: false, error: "Method not allowed." });
+  if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") return sendJson(res, 405, { ok: false, error: "Method not allowed." });
 
   loadEnv();
   const clientId = process.env.WORKOS_CLIENT_ID ?? process.env.VITE_WORKOS_CLIENT_ID ?? "";
@@ -138,6 +138,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       db.prepare(`INSERT INTO users(id, email, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email=excluded.email, updated_at=excluded.updated_at`).run(userId, email, Date.now(), Date.now());
       const createdToken = getOrCreateAuthToken(db, userId, email);
       return sendJson(res, 200, { ok: true, authToken: createdToken });
+    }
+
+    if (req.method === "DELETE") {
+      const result = db.prepare("DELETE FROM user_auth_tokens WHERE user_id = ?").run(userId);
+      return sendJson(res, 200, { ok: true, deleted: result.changes > 0 });
     }
 
     const countRow = db.prepare("SELECT COUNT(*) AS count FROM projects WHERE user_id = ?").get(userId) as { count: number };

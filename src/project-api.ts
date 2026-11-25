@@ -73,3 +73,9 @@ export const publishProjectShare = (
   method: "POST",
   body: JSON.stringify(payload),
 });
+
+export const deleteProjectShare = (getAccessToken: () => Promise<string | null>, projectId: string, format: ShareFormat) =>
+  authenticatedProjectRequest<{ ok: true; deleted: boolean }>(getAccessToken, "/api/project-share", {
+    method: "DELETE",
+    body: JSON.stringify({ projectId, format }),
+  });

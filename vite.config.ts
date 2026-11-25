@@ -34,8 +34,8 @@ function profileDevApi(): Plugin {
         const pathname = (req.url ?? '').split('?')[0]
         if (!/^\/([a-f0-9]{32})\/profile\/?$/.test(pathname)) return next()
         res.setHeader('Access-Control-Allow-Origin', '*')
-        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Archboard-Email')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
         await profileApi(req as never, res as never)
       })
     },
@@ -62,6 +62,9 @@ function projectShareDevApi(): Plugin {
     server.middlewares.use(async (req, res, next) => {
       const pathname = (req.url ?? '').split('?')[0]
       if (pathname !== '/api/project-share' && !/^\/[a-f0-9]{32}\/live\/img\/(svg|png)\/[^/]+\.(svg|png)\/?$/.test(pathname)) return next()
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
       await projectShareApi(req as never, res as never)
     })
   } }

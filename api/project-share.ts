@@ -110,6 +110,10 @@ function parseArtifact(format: ShareFormat, data: string) {
 }
 function publicUrl(hash: string, format: ShareFormat, projectId: string) { return `/${hash}/live/img/${format}/${encodeURIComponent(projectId)}.${format}`; }
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") { res.statusCode = 204; res.end(); return; }
   const requestUrl = new URL(req.url ?? "/", "http://localhost");
   const path = requestUrl.pathname;
   const originalMatch = path.match(/^\/([a-f0-9]{32})\/live\/img\/(svg|png)\/([^/]+)\.(svg|png)\/?$/);
@@ -145,6 +149,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const projectId = new URL(req.url ?? "", "http://localhost").searchParams.get("projectId") ?? "";
       const rows = db.prepare("SELECT format,revision,published_at FROM project_shares WHERE project_id=? AND user_id=?").all(projectId, auth.userId) as Array<{ format: ShareFormat; revision: string; published_at: number }>;
       return json(res, 200, { ok: true, shares: rows.map((row) => ({ format: row.format, revision: row.revision, publishedAt: row.published_at, url: publicUrl(auth.profileHash, row.format, projectId) })) });
+    }
+    if (req.method === "DELETE") {
+      const value = JSON.parse(await body(req)) as Record<string, unknown>;
+      const projectId = typeof value.projectId === "string" ? value.projectId : "";
+      const format = value.format === "png" || value.format === "svg" ? value.format : null;
+      if (!projectId || !format) return json(res, 400, { ok: false, error: "Invalid share payload." });
+      const owned = db.prepare("SELECT id FROM projects WHERE id=? AND user_id=?").get(projectId, auth.userId);
+      if (!owned) return json(res, 404, { ok: false, error: "Project not found." });
+      const result = db.prepare("DELETE FROM project_shares WHERE project_id=? AND user_id=? AND format=?").run(projectId, auth.userId, format);
+      return json(res, 200, { ok: true, deleted: result.changes > 0 });
     }
     if (req.method !== "POST") return json(res, 405, { ok: false, error: "Method not allowed." });
     const value = JSON.parse(await body(req)) as Record<string, unknown>;
