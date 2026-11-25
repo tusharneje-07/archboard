@@ -11,7 +11,7 @@ type ShareFormat = "png" | "svg";
 const databasePath = resolve(process.cwd(), process.env.ARCHBOARD_SQLITE_PATH ?? "./data/archboard.sqlite");
 mkdirSync(dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
-db.pragma("journal_mode = WAL");
+db.pragma("journal_mode = DELETE");
 db.pragma("foreign_keys = ON");
 db.exec(`CREATE TABLE IF NOT EXISTS project_shares (
   project_id TEXT NOT NULL, user_id TEXT NOT NULL, profile_hash TEXT NOT NULL, format TEXT NOT NULL,
@@ -59,37 +59,53 @@ async function authenticate(req: ApiRequest) {
   db.prepare("INSERT INTO users(id,email,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,updated_at=excluded.updated_at").run(userId, email, now, now);
   return { userId, email, profileHash: createHash("md5").update(email).digest("hex") };
 }
-function normalizeSvg(svg: string) {
+function normalizeSvgArtifact(value: string) {
+  let svg = value;
+  const dataUri = value.match(/^data:([^,]*),([\s\S]*)$/i);
+  if (dataUri) {
+    const metadata = dataUri[1].split(";").map((part) => part.trim().toLowerCase());
+    if (metadata[0] !== "image/svg+xml") throw new Error("Invalid SVG artifact.");
+    const payload = dataUri[2];
+    if (metadata.includes("base64")) {
+      const encodedPayload = decodeURIComponent(payload);
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encodedPayload) || encodedPayload.length % 4 === 1) throw new Error("Invalid SVG artifact.");
+      svg = Buffer.from(encodedPayload, "base64").toString("utf8");
+    } else {
+      svg = decodeURIComponent(payload);
+    }
+  } else {
+    // Legacy rows sometimes contain a URI-encoded SVG without its data URI.
+    // Only attempt this once, and only when the value does not already expose
+    // an SVG root.
+    const withoutBom = value.replace(/^\uFEFF/, "");
+    if (!/<svg(?:\s|>)/i.test(withoutBom) && /%[0-9a-f]{2}/i.test(value)) {
+      try { svg = decodeURIComponent(value); } catch { /* validate the original below */ }
+    }
+  }
+
   const withoutBom = svg.replace(/^\uFEFF/, "");
-  const root = withoutBom.search(/<(?:(?:\?xml)\b|svg\b)/i);
-  if (root < 0) throw new Error("Invalid SVG artifact.");
-  const normalized = withoutBom.slice(root);
-  if (!/^<(?:(?:\?xml)\b|svg\b)/i.test(normalized)) throw new Error("Invalid SVG artifact.");
+  const svgRoot = withoutBom.search(/<svg(?:\s|>)/i);
+  if (svgRoot < 0) throw new Error("Invalid SVG artifact.");
+  const xmlDeclaration = withoutBom.search(/<\?xml\b/i);
+  const start = xmlDeclaration >= 0 && xmlDeclaration < svgRoot ? xmlDeclaration : svgRoot;
+  const normalized = withoutBom.slice(start);
+  if (!/^<(?:(?:\?xml)\b|svg(?:\s|>))/i.test(normalized) || !/<svg(?:\s|>)/i.test(normalized)) {
+    throw new Error("Invalid SVG artifact.");
+  }
+  if (Buffer.byteLength(normalized, "utf8") > 10 * 1024 * 1024) throw new Error("Shared artifact exceeds 10 MB.");
   return normalized;
 }
 function parseArtifact(format: ShareFormat, data: string) {
-  const match = data.match(/^data:([^,]*),([\s\S]*)$/i);
-  if (!match) throw new Error(`Invalid ${format.toUpperCase()} artifact.`);
-  const metadata = match[1].toLowerCase();
-  const payload = match[2];
   if (format === "png") {
+    const match = data.match(/^data:([^,]*),([\s\S]*)$/i);
+    if (!match) throw new Error("Invalid PNG artifact.");
+    const metadata = match[1].toLowerCase();
+    const payload = match[2];
     if (metadata !== "image/png;base64" || !/^[A-Za-z0-9+/=]+$/.test(payload)) throw new Error("Invalid PNG artifact.");
     if (Buffer.byteLength(payload, "utf8") > 10 * 1024 * 1024) throw new Error("Shared artifact exceeds 10 MB.");
     return payload;
   }
-  if (!metadata.startsWith("image/svg+xml") || (metadata !== "image/svg+xml" && !metadata.match(/^image\/svg\+xml;(?:charset=[^;]+;)?base64$/))) {
-    if (metadata !== "image/svg+xml;charset=utf-8") throw new Error("Invalid SVG artifact.");
-  }
-  const isBase64 = metadata.endsWith(";base64");
-  let svg: string;
-  try {
-    const encodedPayload = isBase64 ? decodeURIComponent(payload) : payload;
-    svg = isBase64 ? Buffer.from(encodedPayload, "base64").toString("utf8") : decodeURIComponent(payload);
-  } catch {
-    throw new Error("Invalid SVG artifact.");
-  }
-  const normalized = normalizeSvg(svg);
-  if (Buffer.byteLength(normalized, "utf8") > 10 * 1024 * 1024) throw new Error("Shared artifact exceeds 10 MB.");
+  const normalized = normalizeSvgArtifact(data);
   return normalized;
 }
 function publicUrl(hash: string, format: ShareFormat, projectId: string) { return `/${hash}/live/img/${format}/${encodeURIComponent(projectId)}.${format}`; }
@@ -113,11 +129,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     ? { hash: originalMatch[1], format: originalMatch[2], filename: originalMatch[3], extension: originalMatch[4] }
     : rewrittenPublicMatch;
   if (publicMatch && req.method === "GET") {
-    const projectId = decodeURIComponent(publicMatch.filename);
-    const row = db.prepare("SELECT artifact, format FROM project_shares WHERE profile_hash=? AND project_id=? AND format=?").get(publicMatch.hash, projectId, publicMatch.format) as { artifact: string; format: ShareFormat } | undefined;
-    if (!row) { res.statusCode = 404; res.setHeader("Content-Type", "text/plain; charset=utf-8"); res.end("Shared image not found."); return; }
-    const data = row.format === "png" ? Buffer.from(row.artifact, "base64") : Buffer.from(normalizeSvg(row.artifact), "utf8");
-    res.statusCode = 200; res.setHeader("Content-Type", row.format === "png" ? "image/png" : "image/svg+xml; charset=utf-8"); res.setHeader("Cache-Control", "public, max-age=60, must-revalidate"); res.end(data); return;
+    try {
+      const projectId = decodeURIComponent(publicMatch.filename);
+      const row = db.prepare("SELECT artifact, format FROM project_shares WHERE profile_hash=? AND project_id=? AND format=?").get(publicMatch.hash, projectId, publicMatch.format) as { artifact: string; format: ShareFormat } | undefined;
+      if (!row) { res.statusCode = 404; res.setHeader("Content-Type", "text/plain; charset=utf-8"); res.end("Shared image not found."); return; }
+      const data = row.format === "png" ? Buffer.from(row.artifact, "base64") : Buffer.from(normalizeSvgArtifact(row.artifact), "utf8");
+      res.statusCode = 200; res.setHeader("Content-Type", row.format === "png" ? "image/png" : "image/svg+xml; charset=utf-8"); res.setHeader("Cache-Control", "public, max-age=60, must-revalidate"); res.end(data); return;
+    } catch {
+      res.statusCode = 404; res.setHeader("Content-Type", "text/plain; charset=utf-8"); res.end("Shared image not found."); return;
+    }
   }
   try {
     const auth = await authenticate(req);

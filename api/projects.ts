@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { ensureAuthTokenSchema, getOrCreateAuthToken } from "./auth-tokens";
+import { ensureAuthTokenSchema } from "./auth-tokens";
 
 type HeaderValue = string | string[] | undefined;
 type ApiRequest = { method?: string; url?: string; headers: Record<string, HeaderValue>; body?: unknown };
@@ -23,7 +23,7 @@ const FREE_PROJECT_LIMIT = 25;
 const databasePath = resolve(process.cwd(), process.env.ARCHBOARD_SQLITE_PATH ?? "./data/archboard.sqlite");
 mkdirSync(dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
-db.pragma("journal_mode = WAL");
+db.pragma("journal_mode = DELETE");
 db.pragma("foreign_keys = ON");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -124,8 +124,7 @@ async function authenticate(req: ApiRequest) {
   if (!userId) throw Object.assign(new Error("Access token has no subject."), { status: 401 });
   const email = typeof verified.payload.email === "string" ? verified.payload.email : null;
   const now = Date.now();
-  db.prepare(`INSERT INTO users(id, email, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email=excluded.email, updated_at=excluded.updated_at`).run(userId, email, now, now);
-  getOrCreateAuthToken(db, userId, email ?? "");
+  db.prepare(`INSERT INTO users(id, email, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email=COALESCE(excluded.email, users.email), updated_at=excluded.updated_at`).run(userId, email, now, now);
   return { userId, email };
 }
 

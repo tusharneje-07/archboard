@@ -39,7 +39,7 @@
     },
     {
       "source": "/([a-f0-9]{32})/profile",
-      "destination": "/api/profile"
+      "destination": "/api/profile?profileHash=$1"
     },
     {
       "source": "/([a-f0-9]{32})/projects/(.+)",
@@ -47,7 +47,7 @@
     },
     {
       "source": "/([a-f0-9]{32})/profile/",
-      "destination": "/api/profile"
+      "destination": "/api/profile?profileHash=$1"
     },
     {
       "source": "/((?!api/).*)",

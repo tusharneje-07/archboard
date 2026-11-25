@@ -35,7 +35,7 @@ function profileDevApi(): Plugin {
         if (!/^\/([a-f0-9]{32})\/profile\/?$/.test(pathname)) return next()
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         await profileApi(req as never, res as never)
       })
     },

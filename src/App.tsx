@@ -1917,16 +1917,32 @@ function PremiumAuthScreen({ onStart }: { onStart: () => void }) {
 }
 function ProfileScreen({ userName, userEmail, profileHash, getAccessToken, signOut }: { userName: string; userEmail: string; profileHash: string; getAccessToken: () => Promise<string | null>; signOut: () => Promise<void> | void }) {
   const [authToken, setAuthToken] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setError("");
-    void authenticatedProjectRequest<{ ok: true; profile: { authToken: string } }>(getAccessToken, `/${profileHash}/profile`)
-      .then((response) => { if (!cancelled) setAuthToken(response.profile.authToken); })
-      .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load your auth token."); });
+    setLoading(true);
+    void authenticatedProjectRequest<{ ok: true; profile: { authToken: string | null } }>(getAccessToken, `/${profileHash}/profile`, { headers: { "X-Archboard-Email": userEmail } })
+      .then((response) => { if (!cancelled) setAuthToken(response.profile.authToken ?? ""); })
+      .catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not load your profile."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [getAccessToken, profileHash]);
+  }, [getAccessToken, profileHash, userEmail]);
+  const createToken = async () => {
+    setCreating(true);
+    setError("");
+    try {
+      const response = await authenticatedProjectRequest<{ ok: true; authToken: string }>(getAccessToken, `/${profileHash}/profile`, { method: "POST", headers: { "X-Archboard-Email": userEmail } });
+      setAuthToken(response.authToken);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Could not create your auth token.");
+    } finally {
+      setCreating(false);
+    }
+  };
   const copyToken = async () => {
     if (!authToken) return;
     try {
@@ -1959,13 +1975,15 @@ function ProfileScreen({ userName, userEmail, profileHash, getAccessToken, signO
         <section className="profile-token-card" aria-labelledby="profile-token-heading">
           <div className="profile-token-heading">
             <div><span className="eyebrow">Developer access</span><h2 id="profile-token-heading">Auth token</h2></div>
-            <span className="profile-token-status">Active</span>
+            <span className="profile-token-status">{authToken ? "Active" : "Not created"}</span>
           </div>
           <p>Use this token with <code>/view-archboard-dig</code> to upload diagrams into presentation mode.</p>
-          <div className="profile-token-value">
-            <code>{authToken || (error ? "Unavailable" : "Loading token…")}</code>
-            <button type="button" onClick={() => void copyToken()} disabled={!authToken} aria-label="Copy auth token" title="Copy auth token">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
-          </div>
+          {authToken
+            ? <div className="profile-token-value">
+              <code>{authToken}</code>
+              <button type="button" onClick={() => void copyToken()} aria-label="Copy auth token" title="Copy auth token">{copied ? <Check size={16} /> : <Copy size={16} />}</button>
+            </div>
+            : <button className="primary profile-create-token" type="button" onClick={() => void createToken()} disabled={loading || creating}>{creating ? "Creating auth token…" : loading ? "Loading…" : "Create auth token"}</button>}
           {copied && <span className="profile-copy-status" role="status">Copied to clipboard</span>}
           {error && <p className="profile-token-error" role="alert">{error}</p>}
           <small>Keep this token private. It is unique to your account.</small>

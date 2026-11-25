@@ -30,7 +30,7 @@ const indexFile = resolve(process.cwd(), "dist/index.html");
 const databasePath = resolve(process.cwd(), process.env.ARCHBOARD_SQLITE_PATH ?? "./data/archboard.sqlite");
 mkdirSync(dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
-db.pragma("journal_mode = WAL");
+db.pragma("journal_mode = DELETE");
 db.pragma("foreign_keys = ON");
 ensureAuthTokenSchema(db);
 
