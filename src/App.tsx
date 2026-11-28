@@ -2443,6 +2443,8 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
      [exportQuality, setExportQuality] = useState(() => readExportSettings().quality),
      [exportDpi, setExportDpi] = useState(() => readExportSettings().dpi),
     [exportPreview, setExportPreview] = useState(""),
+    [copyPngBusy, setCopyPngBusy] = useState(false),
+    [copyPngDone, setCopyPngDone] = useState(false),
     [shareFormat, setShareFormat] = useState<ShareFormat>("png"),
     [shareUrl, setShareUrl] = useState(""),
     [shareError, setShareError] = useState(""),
@@ -3379,6 +3381,26 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
       exportBusyRef.current = false;
     }
   };
+  const copyPngToClipboard = async () => {
+    if (copyPngBusy || exportBusyRef.current) return;
+    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+      window.alert("Copying images to the clipboard is not supported in this browser.");
+      return;
+    }
+    setCopyPngBusy(true);
+    try {
+      const data = await exportImage("png", { download: false, transparent: true });
+      if (!data) throw new Error("Could not compile the diagram image.");
+      const blob = await (await fetch(data)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setCopyPngDone(true);
+      window.setTimeout(() => setCopyPngDone(false), 1600);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not copy the image to the clipboard.");
+    } finally {
+      setCopyPngBusy(false);
+    }
+  };
   const exportJson = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
@@ -3470,6 +3492,9 @@ function Editor({ project, profileHash, getAccessToken, syncProjectToRemote }: {
           </button>
           <button className="icon-button" onClick={openImportDialog} title="Import JSON">
             <Upload size={17} />
+          </button>
+          <button className="icon-button" disabled={copyPngBusy || exportBusy} onClick={() => void copyPngToClipboard()} title={copyPngDone ? "Copied PNG to clipboard" : "Copy diagram as PNG to clipboard"} aria-label="Copy diagram as PNG to clipboard">
+            {copyPngDone ? <Check size={17} /> : <Copy size={17} />}
           </button>
           <button className="presentation-button" onClick={() => window.open(`/present/${project.id}`, "_blank", "noopener,noreferrer")} title="Open presentation in a new tab">
             <PresentationIcon size={16} />
